@@ -1,14 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import {
-  ClerkProvider,
-  Show,
-  SignInButton,
-  SignUpButton,
-  UserButton,
-} from "@clerk/nextjs";
-import { xxx } from "next/server";
+import { ClerkProvider, Show, UserButton } from "@clerk/nextjs";
+import { Button } from "@/components/ui/button";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,12 +35,8 @@ export default function RootLayout({
               <h1 className="text-xl font-bold">Vur3D</h1>
               <nav>
                 <Show when="signed-out">
-                  <SignInButton mode="modal">
-                    <button className="text-sm font-medium px-4 py-2 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                      Sign In
-                    </button>
-                  </SignInButton>
-                  <SignUpButton />
+                  <Button variant={"outline"}>Sign In</Button>
+                  <Button variant={"default"}>Sign Up</Button>
                 </Show>
                 <Show when="signed-in">
                   <UserButton />
