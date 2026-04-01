@@ -18,8 +18,12 @@ import {
   ExternalLink,
   Calendar,
   HardDrive,
+  FolderKanban,
 } from "lucide-react";
 import { MAX_PROJECTS_FREE } from "@/lib/constants";
+import CreateProjectModal from "@/components/ui/modal/create-project-modal";
+import { Separator } from "@/components/ui/separator";
+import { useQuery } from "@tanstack/react-query";
 
 type Project = {
   id: string;
@@ -46,33 +50,53 @@ function formatDate(iso: string): string {
   });
 }
 
-export default function DashboardPage() {
+export default function Page() {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  const fetchProjects = async () => {
-    try {
+  const { isLoading: loading } = useQuery({
+    queryKey: ["getProjects"],
+    queryFn: async () => {
       const res = await fetch("/api/projects");
       if (res.ok) {
         const data = await res.json();
         setProjects(data);
       }
-    } catch (error) {
-      console.error("Failed to fetch projects:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return res;
+    },
+  });
 
-  useEffect(() => {
-    fetchProjects();
-  }, []);
+  const isAtLimit = projects.length >= MAX_PROJECTS_FREE;
 
   return (
-    <div className="px-4 lg:px-6">
+    <div className="p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <FolderKanban className="size-6 text-primary" />
+            My Projects
+          </h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Upload .glb models, customize the viewer, and embed them anywhere.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Badge
+            variant="secondary"
+            className={`font-mono text-xs ${
+              isAtLimit ? "text-destructive border-destructive/30" : ""
+            }`}
+          >
+            {projects.length} / {MAX_PROJECTS_FREE}
+          </Badge>
+          <CreateProjectModal />
+        </div>
+      </div>
+      <Separator />
+
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      {/* <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">My Projects</h1>
           <p className="text-muted-foreground text-sm mt-1">
@@ -80,16 +104,22 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge variant="secondary" className="font-mono text-xs">
+          <Badge
+            variant="secondary"
+            className={`font-mono text-xs ${
+              isAtLimit ? "text-destructive border-destructive/30" : ""
+            }`}
+          >
             {projects.length} / {MAX_PROJECTS_FREE}
           </Badge>
+          <CreateProjectModal />
         </div>
-      </div>
+      </div> */}
 
       {/* Loading Skeletons */}
       {loading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
+          {[...Array(3)].map((_, i) => (
             <Card key={i}>
               <CardHeader>
                 <Skeleton className="h-4 w-32" />
@@ -97,6 +127,10 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent>
                 <Skeleton className="h-32 w-full rounded-md" />
+                <div className="flex justify-between mt-3">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-3 w-14" />
+                </div>
               </CardContent>
             </Card>
           ))}
@@ -116,6 +150,9 @@ export default function DashboardPage() {
                 Upload your first .glb file to get started!
               </p>
             </div>
+            <CreateProjectModal />
+
+            {/* <UploadDialog onSuccess={fetchProjects} /> */}
           </CardContent>
         </Card>
       )}
@@ -127,7 +164,7 @@ export default function DashboardPage() {
             <Card
               key={project.id}
               className="group cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
-              onClick={() => router.push(`/project/${project.id}`)}
+              onClick={() => router.push(`/projects/${project.id}`)}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
@@ -143,7 +180,7 @@ export default function DashboardPage() {
                     className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                     onClick={(e) => {
                       e.stopPropagation();
-                      router.push(`/project/${project.id}`);
+                      router.push(`/projects/${project.id}`);
                     }}
                   >
                     <ExternalLink className="w-4 h-4" />
@@ -155,7 +192,7 @@ export default function DashboardPage() {
               </CardHeader>
 
               <CardContent>
-                {/* 3D Preview */}
+                {/* Thumbnail or Placeholder */}
                 {project.thumbnailUrl ? (
                   <div className="rounded-lg h-32 overflow-hidden mb-3">
                     <img

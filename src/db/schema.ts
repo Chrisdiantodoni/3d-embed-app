@@ -35,43 +35,60 @@ export const assets = sqliteTable(
   }),
 );
 
-export const projects = sqliteTable("projects", {
-  id: text("id").primaryKey(), // nanoid
-  userId: text("user_id").notNull(), // Clerk user id
-  name: text("name").notNull(),
-  fileName: text("file_name").notNull(), // original upload name
-  fileUrl: text("file_url").notNull(), // public R2 URL
-  fileSize: int("file_size"), // bytes
-  thumbnailUrl: text("thumbnail_url"), // captured PNG thumbnail
-  // Viewer config
-  intensity: text("intensity").default("0.6"),
-  autoRotate: int("auto_rotate", { mode: "boolean" }).default(true),
-  environment: text("environment").default("city"), // city | studio | lobby
-  bgColor: text("bg_color").default("#fafafa"),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
+export const projects = sqliteTable(
+  "projects",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
 
-export const hotspots = sqliteTable("hotspots", {
-  id: text("id").primaryKey(), // nanoid
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  positionX: text("position_x").notNull(),
-  positionY: text("position_y").notNull(),
-  positionZ: text("position_z").notNull(),
-  label: text("label").notNull(),
-  description: text("description"),
-  linkUrl: text("link_url"),
-  createdAt: text("created_at").notNull(),
-});
+    // The "Snapshot" URL we discussed
+    thumbnailUrl: text("thumbnail_url"),
 
-export const analyticsEvents = sqliteTable("analytics_events", {
-  id: text("id").primaryKey(), // nanoid
-  projectId: text("project_id")
-    .notNull()
-    .references(() => projects.id, { onDelete: "cascade" }),
-  eventType: text("event_type").notNull(), // "view" | "rotate" | "zoom" | "hotspot_click"
-  metadata: text("metadata"), // JSON string
-  createdAt: text("created_at").notNull(),
-});
+    // Example: { intensity: 0.5, type: 'studio', color: '#ffffff' }
+    lightingSettings: text("lighting_settings").default("{}"),
+
+    // Example: { position: [5, 5, 5], target: [0, 0, 0], fov: 50 }
+    cameraSettings: text("camera_settings").default("{}"),
+
+    // Metadata
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (table) => ({
+    userIdIdx: index("projects_user_id_idx").on(table.userId),
+  }),
+);
+
+export const projectAssets = sqliteTable(
+  "project_assets",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    assetId: text("asset_id")
+      .notNull()
+      .references(() => assets.id),
+
+    // Transformasi Spesifik per Instance Asset
+    // Contoh: { x: 2, y: 0, z: -5 }
+    position: text("position").default('{"x":0,"y":0,"z":0}'),
+    // Contoh: { x: 0, y: 1.57, z: 0 } (dalam radian)
+    rotation: text("rotation").default('{"x":0,"y":0,"z":0}'),
+    // Contoh: { x: 1, y: 1, z: 1 }
+    scale: text("scale").default('{"x":1,"y":1,"z":1}'),
+
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (table) => ({
+    projectIdx: index("pa_project_id_idx").on(table.projectId),
+  }),
+);

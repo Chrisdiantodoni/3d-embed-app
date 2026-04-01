@@ -151,12 +151,12 @@ const data = {
     },
     {
       name: "My Projects",
-      url: "/dashboard/projects",
+      url: "/projects",
       icon: FolderKanban,
     },
     {
       name: "Analytics",
-      url: "/dashboard/analytics",
+      url: "/analytics",
       icon: BarChart3,
     },
     {

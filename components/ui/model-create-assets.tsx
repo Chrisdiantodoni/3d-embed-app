@@ -16,6 +16,7 @@ import { useForm, FormProvider } from "react-hook-form";
 import { createAssetAction } from "@/app/actions/assets";
 import { GLBViewer } from "./glb-viewer";
 import { FormField } from "./input-form";
+import { useQueryClient } from "@tanstack/react-query";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,6 +129,8 @@ export function CreateAssetDialog({
     methods.reset();
   };
 
+  const queryClient = useQueryClient();
+
   const handleUpload = methods.handleSubmit(async (data) => {
     if (!file) return;
     setIsUploading(true);
@@ -143,6 +146,7 @@ export function CreateAssetDialog({
 
       if (result.success) {
         toast.success("Berhasil simpan ke R2 dan Turso!");
+        queryClient.invalidateQueries({ queryKey: ["getAssetLists"] });
         handleClose();
       } else {
         toast.error(result.error);
