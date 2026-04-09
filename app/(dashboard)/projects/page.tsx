@@ -164,7 +164,7 @@ export default function Page() {
             <Card
               key={project.id}
               className="group cursor-pointer transition-all hover:shadow-md hover:border-primary/30"
-              onClick={() => router.push(`/projects/${project.id}`)}
+              onClick={() => router.push(`/editor/${project.id}`)}
             >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
@@ -180,7 +180,7 @@ export default function Page() {
                     className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                     onClick={(e) => {
                       e.stopPropagation();
-                      router.push(`/projects/${project.id}`);
+                      router.push(`/editor/${project.id}`);
                     }}
                   >
                     <ExternalLink className="w-4 h-4" />
