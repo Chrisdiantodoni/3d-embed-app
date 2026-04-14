@@ -6,6 +6,7 @@ import { eq, inArray } from "drizzle-orm";
 export async function getProjectById(id: string) {
   const result = await db
     .select({
+      id: projects.id,
       // Data Project
       projectName: projects.name,
       lighting: projects.lightingSettings,
@@ -27,6 +28,7 @@ export async function getProjectById(id: string) {
   if (result.length === 0) return null;
 
   return {
+    id: result[0].id,
     name: result[0].projectName,
     settings: {
       lighting: JSON.parse(result[0].lighting || "{}"),
@@ -52,77 +54,110 @@ export type ProjectData = NonNullable<
 >;
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> }, // Bungkus dengan Promise
 ) {
-  const projectId = params.id;
+  const { id } = await params;
+  const projectId = id;
+
+  console.log("DEBUG: Received Project ID:", projectId);
+
   const body = await req.json();
+  console.log("DEBUG: Body keys:", Object.keys(body));
+  console.log("DEBUG: Camera Settings:", body.cameraSettings);
+
   const { sceneAssets: clientAssets, lighting, cameraSettings } = body;
 
   try {
     // ── 1. Update project settings ────────────────────────────────────────
+
     await db
+
       .update(projects)
+
       .set({
         lightingSettings: JSON.stringify(lighting),
+
         cameraSettings: JSON.stringify(cameraSettings),
+
         updatedAt: new Date(),
       })
+
       .where(eq(projects.id, projectId));
 
     // ── 2. Ambil semua instance yang ada di DB sekarang ───────────────────
-    const existingRows = await db
-      .select({ id: projectAssets.id })
-      .from(projectAssets)
-      .where(eq(projectAssets.projectId, projectId));
+    await db.transaction(async (tx) => {
+      const existingRows = await tx
+        .select({ id: projectAssets.id, assetId: projectAssets.assetId })
+        .from(projectAssets)
+        .where(eq(projectAssets.projectId, projectId));
 
-    const existingIds = new Set(existingRows.map((r) => r.id));
-    const clientIds = new Set(clientAssets.map((a: any) => a.id));
+      console.log({ existingRows });
 
-    // ── 3. Pisahkan: mana yang baru, update, dan hapus ────────────────────
-    const toInsert = clientAssets.filter((a: any) => !existingIds.has(a.id));
-    const toUpdate = clientAssets.filter((a: any) => existingIds.has(a.id));
-    const toDeleteIds = [...existingIds].filter((id) => !clientIds.has(id));
-
-    // ── 4. DELETE — asset yang dihapus dari scene ─────────────────────────
-    if (toDeleteIds.length > 0) {
-      await db
-        .delete(projectAssets)
-        .where(inArray(projectAssets.id, toDeleteIds));
-    }
-
-    // ── 5. INSERT — asset baru dari library ───────────────────────────────
-    if (toInsert.length > 0) {
-      await db.insert(projectAssets).values(
-        toInsert.map((a: any) => ({
-          id: a.id,
-          projectId,
-          assetId: a.assetId, // ✅ ID dari tabel assets (bukan instanceId)
-          position: JSON.stringify(a.transform.position),
-          rotation: JSON.stringify(a.transform.rotation),
-          scale: JSON.stringify(a.transform.scale),
-        })),
+      // Key by assetId, not id
+      const existingByAssetId = new Map(
+        existingRows.map((r) => [r.id, r.assetId]),
       );
-    }
+      const clientAssetIds = new Set(clientAssets.map((a: any) => a.assetId));
 
-    // ── 6. UPDATE — asset yang sudah ada, update transform ────────────────
-    if (toUpdate.length > 0) {
-      await Promise.all(
-        toUpdate.map((a: any) =>
-          db
-            .update(projectAssets)
-            .set({
-              position: JSON.stringify(a.transform.position),
-              rotation: JSON.stringify(a.transform.rotation),
-              scale: JSON.stringify(a.transform.scale),
-            })
-            .where(eq(projectAssets.id, a.id)),
-        ),
+      // ── 3. Classify ─────────────────────────────────────────────────────────
+      const toInsert = clientAssets.filter(
+        (a: any) => !existingByAssetId.has(a.assetId),
       );
-    }
+      const toUpdate = clientAssets.filter((a: any) =>
+        existingByAssetId.has(a.assetId),
+      );
+      const toDeleteIds = [...existingByAssetId.entries()]
+        .filter(([assetId]) => !clientAssetIds.has(assetId))
+        .map(([, id]) => id); // use the projectAssets PK for delete
+      console.log({ projectId });
 
+      // ── 4. DELETE ────────────────────────────────────────────────────────────
+      if (toDeleteIds.length > 0) {
+        await tx
+          .delete(projectAssets)
+          .where(inArray(projectAssets.id, toDeleteIds));
+      }
+
+      // ── 5. INSERT ────────────────────────────────────────────────────────────
+      if (toInsert.length > 0) {
+        console.log("--- DEBUG INSERT ---");
+        console.log("Project ID:", projectId);
+        toInsert.forEach((a: any, i: number) => {
+          console.log(`Item ${i} - assetId:`, a.assetId);
+        });
+
+        await tx.insert(projectAssets).values(
+          toInsert.map((a: any) => ({
+            id: crypto.randomUUID(),
+            projectId,
+            assetId: a.assetId,
+            position: JSON.stringify(a.transform.position),
+            rotation: JSON.stringify(a.transform.rotation),
+            scale: JSON.stringify(a.transform.scale),
+          })),
+        );
+      }
+
+      // ── 6. UPDATE — use the real DB id from the map ──────────────────────────
+      if (toUpdate.length > 0) {
+        await Promise.all(
+          toUpdate.map((a: any) =>
+            tx
+              .update(projectAssets)
+              .set({
+                position: JSON.stringify(a.transform.position),
+                rotation: JSON.stringify(a.transform.rotation),
+                scale: JSON.stringify(a.transform.scale),
+              })
+              .where(eq(projectAssets.id, existingByAssetId.get(a.assetId)!)),
+          ),
+        );
+      }
+    });
     return Response.json({ success: true });
   } catch (err) {
     console.error("[PATCH /api/projects/:id]", err);
-    return Response.json({ error: "Failed to save" }, { status: 500 });
+
+    return Response.json({ error: `Failed to save ${err}` }, { status: 500 });
   }
 }

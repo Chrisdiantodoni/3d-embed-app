@@ -68,7 +68,9 @@ export const projects = sqliteTable(
 export const projectAssets = sqliteTable(
   "project_assets",
   {
-    id: text("id").primaryKey(),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
     projectId: text("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),

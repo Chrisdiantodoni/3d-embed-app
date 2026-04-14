@@ -1257,33 +1257,6 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     })),
   );
 
-  const handleAddAsset = useCallback(
-    (libraryAsset: LibraryAsset) => {
-      const newAsset: SceneAsset = {
-        id: crypto.randomUUID(), // ✅ instanceId (project_assets.id)
-        assetId: libraryAsset.id, // ✅ foreign key ke tabel assets
-        name: libraryAsset.name,
-        url: toProxyUrl(libraryAsset.url),
-        transform: {
-          position: { x: 0, y: 0, z: 0 },
-          rotation: { x: 0, y: 0, z: 0 },
-          scale: { x: 1, y: 1, z: 1 },
-        },
-        defaultTransform: {
-          position: { x: 0, y: 0, z: 0 },
-          rotation: { x: 0, y: 0, z: 0 },
-          scale: { x: 1, y: 1, z: 1 },
-        },
-        visible: true,
-        autoRotate: false,
-        autoRotateSpeed: 1,
-      };
-      commit((prev) => [...prev, newAsset]);
-      setSelectedId(newAsset.id);
-    },
-    [commit],
-  );
-
   const [cameraFitted, setCameraFitted] = useState(false);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -1340,6 +1313,7 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     setIsSaving(true);
     try {
       if (thumbnailTriggerRef.current) thumbnailTriggerRef.current();
+      console.log("DEBUG: Saving project", data.id);
       await fetch(`/api/projects/${data.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1360,6 +1334,7 @@ export default function ProjectEditorClient({ data }: { data: any }) {
       setIsSaving(false);
     }
   }, [sceneAssets, lighting, data.id]);
+  console.log({ data });
 
   // Auto-save 30s
   useEffect(() => {
@@ -1418,6 +1393,7 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     (libraryAsset: LibraryAsset) => {
       const newAsset: SceneAsset = {
         id: crypto.randomUUID(),
+        assetId: libraryAsset.id,
         name: libraryAsset.name,
         url: toProxyUrl(libraryAsset.url),
         transform: {
