@@ -4,7 +4,8 @@ const isPublicRoute = createRouteMatcher([
   "/", // Landing page
   "/sign-in(.*)", // Halaman login
   "/sign-up(.*)", // Halaman daftar
-  "/v/(.*)", // PENTING: Public 3D Viewer (agar bisa di-embed)
+  "/embed/(.*)", // Public signed embeds
+  "/api/proxy(.*)", // Asset proxy for embeds
   "/api/webhook(.*)", // Jika nanti butuh webhook untuk Stripe/Clerk
 ]);
 

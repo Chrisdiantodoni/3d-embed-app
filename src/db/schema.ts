@@ -1,6 +1,5 @@
 import { sql } from "drizzle-orm";
 import {
-  int,
   sqliteTable,
   text,
   integer,
@@ -92,5 +91,25 @@ export const projectAssets = sqliteTable(
   },
   (table) => ({
     projectIdx: index("pa_project_id_idx").on(table.projectId),
+  }),
+);
+
+export const projectEmbedDomains = sqliteTable(
+  "project_embed_domains",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (table) => ({
+    projectIdx: index("ped_project_id_idx").on(table.projectId),
+    domainIdx: index("ped_domain_idx").on(table.domain),
   }),
 );

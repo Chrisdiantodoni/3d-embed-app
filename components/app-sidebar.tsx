@@ -9,18 +9,14 @@ import {
   Command,
   CreditCard,
   FolderKanban,
-  Frame,
   GalleryVerticalEnd,
   Globe,
   Library,
-  Map,
-  PieChart,
   Settings2,
   SquareTerminal,
   Webhook,
 } from "lucide-react";
 
-import { NavMain } from "@/components/nav-main";
 import { NavProjects } from "@/components/nav-projects";
 import { NavUser } from "@/components/nav-user";
 import { TeamSwitcher } from "@/components/team-switcher";
@@ -161,7 +157,7 @@ const data = {
     },
     {
       name: "Domain",
-      url: "/dashboard/domains",
+      url: "/domains",
       icon: Globe,
     },
     {

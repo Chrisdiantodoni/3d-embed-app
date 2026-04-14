@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/src/index";
 import { assets } from "@/src/db/schema";
-import { eq, desc, ilike, count, and, like } from "drizzle-orm";
+import { eq, desc, count, and, like } from "drizzle-orm";
 
 export async function GET(request: Request) {
   try {

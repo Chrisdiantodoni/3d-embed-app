@@ -25,6 +25,14 @@ import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Save,
   Move,
   RotateCw,
@@ -55,6 +63,7 @@ import {
   Copy,
 } from "lucide-react";
 import * as THREE from "three";
+import { useDebounce } from "@/hooks/use-debounce";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -85,6 +94,16 @@ type LibraryAsset = {
   thumbnailUrl?: string;
   category: string;
 };
+type AssetLibraryResponse = {
+  data: LibraryAsset[];
+  pagination?: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    hasNextPage: boolean;
+  };
+};
 type CameraBookmark = {
   id: string;
   name: string;
@@ -92,6 +111,15 @@ type CameraBookmark = {
   target: [number, number, number];
 };
 type HistorySnapshot = SceneAsset[];
+type GeneratedEmbed = {
+  embedUrl: string;
+  iframeCode: string;
+  allowedDomains: string[];
+};
+type EmbedDomainRecord = {
+  id: string;
+  domain: string;
+};
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1051,18 +1079,38 @@ function AssetLibraryPanel({
   const [isOpen, setIsOpen] = useState(true);
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 350);
   const [loading, setLoading] = useState(false);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [totalAssets, setTotalAssets] = useState(0);
   const [panelHeight, setPanelHeight] = useState(220);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const [page, setPage] = useState(1);
+  const requestedPage = search === debouncedSearch ? page : 1;
 
   useEffect(() => {
+    let cancelled = false;
+
     setLoading(true);
-    fetch("/api/assets")
+    fetch(
+      `/api/assets?q=${encodeURIComponent(debouncedSearch)}&page=${requestedPage}&limit=12`,
+    )
       .then((r) => r.json())
-      .then((data) => setAssets(data?.data || []))
+      .then((data: AssetLibraryResponse) => {
+        if (cancelled) return;
+        setAssets(data?.data || []);
+        setHasNextPage(Boolean(data?.pagination?.hasNextPage));
+        setTotalAssets(data?.pagination?.total || 0);
+      })
       .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [debouncedSearch, requestedPage]);
 
   const handleDragStart = (e: React.MouseEvent) => {
     dragRef.current = { startY: e.clientY, startH: panelHeight };
@@ -1087,12 +1135,6 @@ function AssetLibraryPanel({
     window.addEventListener("mouseup", onUp);
   };
 
-  const filtered = useMemo(
-    () =>
-      assets.filter((a) => a.name.toLowerCase().includes(search.toLowerCase())),
-    [assets, search],
-  );
-
   return (
     <div
       className="w-full bg-zinc-900/95 border-t border-white/10 flex flex-col backdrop-blur-md"
@@ -1111,7 +1153,7 @@ function AssetLibraryPanel({
         </span>
         {isOpen && (
           <span className="text-sm text-white/30 ml-1">
-            {filtered.length} assets
+            {totalAssets} assets
           </span>
         )}
         <div className="flex-1" />
@@ -1142,13 +1184,13 @@ function AssetLibraryPanel({
               <div className="flex items-center justify-center h-full">
                 <p className="text-white/30 text-sm">Loading assets...</p>
               </div>
-            ) : filtered.length === 0 ? (
+            ) : assets.length === 0 ? (
               <div className="flex items-center justify-center h-full">
                 <p className="text-white/20 text-sm">No assets found</p>
               </div>
             ) : (
               <div className="flex gap-3 h-full items-start">
-                {filtered.map((asset) => (
+                {assets.map((asset) => (
                   <button
                     key={asset.id}
                     onClick={() => onAddAsset(asset)}
@@ -1173,6 +1215,39 @@ function AssetLibraryPanel({
                     </span>
                   </button>
                 ))}
+                <div className="shrink-0 flex h-full items-start">
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={requestedPage === 1 || loading}
+                      onClick={() =>
+                        setPage((current) =>
+                          Math.max(1, (search === debouncedSearch ? current : 1) - 1),
+                        )
+                      }
+                    >
+                      Prev
+                    </Button>
+                    <div className="text-center text-xs text-white/40">
+                      Page {requestedPage}
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={!hasNextPage || loading}
+                      onClick={() =>
+                        setPage((current) =>
+                          (search === debouncedSearch ? current : 1) + 1,
+                        )
+                      }
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -1269,6 +1344,21 @@ export default function ProjectEditorClient({ data }: { data: any }) {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [focusTargetId, setFocusTargetId] = useState<string | null>(null);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [copiedTarget, setCopiedTarget] = useState<"url" | "iframe" | null>(
+    null,
+  );
+  const [baseUrl, setBaseUrl] = useState("");
+  const [isGeneratingEmbed, setIsGeneratingEmbed] = useState(false);
+  const [embedError, setEmbedError] = useState<string | null>(null);
+  const [generatedEmbed, setGeneratedEmbed] = useState<GeneratedEmbed | null>(
+    null,
+  );
+  const [embedDomains, setEmbedDomains] = useState<EmbedDomainRecord[]>([]);
+  const [embedDomainInput, setEmbedDomainInput] = useState("");
+  const [isLoadingEmbedDomains, setIsLoadingEmbedDomains] = useState(false);
+  const [isUpdatingEmbedDomains, setIsUpdatingEmbedDomains] = useState(false);
+  const [embedDomainError, setEmbedDomainError] = useState<string | null>(null);
 
   // Camera
   const orbitRef = useRef<any>(null);
@@ -1294,6 +1384,42 @@ export default function ProjectEditorClient({ data }: { data: any }) {
   useEffect(() => {
     setHasUnsavedChanges(true);
   }, [sceneAssets, lighting]);
+
+  useEffect(() => {
+    setBaseUrl(window.location.origin);
+  }, []);
+
+  const loadEmbedDomains = useCallback(async () => {
+    setIsLoadingEmbedDomains(true);
+    setEmbedDomainError(null);
+
+    try {
+      const response = await fetch(`/api/projects/${data.id}/embed-domains`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEmbedDomainError(result.error || "Failed to load embed domains.");
+        return;
+      }
+
+      setEmbedDomains(
+        (result.domains ?? []).map((item: { id: string; domain: string }) => ({
+          id: item.id,
+          domain: item.domain,
+        })),
+      );
+    } catch (error) {
+      console.error("Failed to load embed domains:", error);
+      setEmbedDomainError("Failed to load embed domains.");
+    } finally {
+      setIsLoadingEmbedDomains(false);
+    }
+  }, [data.id]);
+
+  useEffect(() => {
+    if (!isExportOpen) return;
+    void loadEmbedDomains();
+  }, [isExportOpen, loadEmbedDomains]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1489,6 +1615,117 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     [sceneAssets, commit],
   );
 
+  const handleCopyExport = useCallback(async (value: string, target: "url" | "iframe") => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopiedTarget(target);
+      window.setTimeout(() => {
+        setCopiedTarget((current) => (current === target ? null : current));
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to copy export value:", error);
+    }
+  }, []);
+
+  const handleAddEmbedDomain = useCallback(async () => {
+    const domain = embedDomainInput.trim();
+    if (!domain) return;
+
+    setIsUpdatingEmbedDomains(true);
+    setEmbedDomainError(null);
+    setGeneratedEmbed(null);
+
+    try {
+      const response = await fetch(`/api/projects/${data.id}/embed-domains`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domain }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEmbedDomainError(result.error || "Failed to add domain.");
+        return;
+      }
+
+      setEmbedDomains((prev) => {
+        const existing = prev.some((item) => item.id === result.domain.id);
+        if (existing) return prev;
+        return [...prev, result.domain].sort((a, b) =>
+          a.domain.localeCompare(b.domain),
+        );
+      });
+      setEmbedDomainInput("");
+    } catch (error) {
+      console.error("Failed to add embed domain:", error);
+      setEmbedDomainError("Failed to add domain.");
+    } finally {
+      setIsUpdatingEmbedDomains(false);
+    }
+  }, [data.id, embedDomainInput]);
+
+  const handleDeleteEmbedDomain = useCallback(async (domainId: string) => {
+    setIsUpdatingEmbedDomains(true);
+    setEmbedDomainError(null);
+    setGeneratedEmbed(null);
+
+    try {
+      const response = await fetch(
+        `/api/projects/${data.id}/embed-domains/${domainId}`,
+        { method: "DELETE" },
+      );
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEmbedDomainError(result.error || "Failed to delete domain.");
+        return;
+      }
+
+      setEmbedDomains((prev) => prev.filter((item) => item.id !== domainId));
+    } catch (error) {
+      console.error("Failed to delete embed domain:", error);
+      setEmbedDomainError("Failed to delete domain.");
+    } finally {
+      setIsUpdatingEmbedDomains(false);
+    }
+  }, [data.id]);
+
+  const handleGenerateEmbed = useCallback(async () => {
+    setIsGeneratingEmbed(true);
+    setEmbedError(null);
+
+    try {
+      const response = await fetch(`/api/projects/${data.id}/embed-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          previewOrigin: window.location.origin,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEmbedError(result.error || "Failed to generate embed token.");
+        return;
+      }
+
+      const embedUrl = `${baseUrl}/embed/${data.id}?token=${encodeURIComponent(result.token)}`;
+      const iframeCode = `<iframe src="${embedUrl}" width="100%" height="600" style="border:0;" loading="lazy" allowfullscreen></iframe>`;
+
+      setGeneratedEmbed({
+        embedUrl,
+        iframeCode,
+        allowedDomains: result.allowedDomains ?? [],
+      });
+    } catch (error) {
+      console.error("Failed to generate embed token:", error);
+      setEmbedError("Failed to generate embed token.");
+    } finally {
+      setIsGeneratingEmbed(false);
+    }
+  }, [baseUrl, data.id]);
+
   return (
     <div className="h-full w-full flex flex-col bg-zinc-950">
       <div className="flex flex-1 overflow-hidden">
@@ -1532,6 +1769,14 @@ export default function ProjectEditorClient({ data }: { data: any }) {
             </Button>
             <div className="w-[1px] bg-white/10 h-6 mx-1" />
             <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsExportOpen(true)}
+                className="gap-2 border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+              >
+                <Copy className="h-4 w-4" />
+                Export
+              </Button>
               {hasUnsavedChanges && (
                 <span className="flex items-center gap-1.5 text-xs text-amber-400/80">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
@@ -1673,6 +1918,162 @@ export default function ProjectEditorClient({ data }: { data: any }) {
 
       {/* PANEL BAWAH */}
       <AssetLibraryPanel onAddAsset={handleAddAsset} />
+
+      <Dialog open={isExportOpen} onOpenChange={setIsExportOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Secure embed export</DialogTitle>
+            <DialogDescription>
+              Create a signed iframe URL that only works on the domains you
+              allow. We automatically include this app origin for previewing.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="embed-domain-input">Allowed domains</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="embed-domain-input"
+                  value={embedDomainInput}
+                  onChange={(e) => setEmbedDomainInput(e.target.value)}
+                  placeholder="https://customer.com"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={isUpdatingEmbedDomains || !embedDomainInput.trim()}
+                  onClick={handleAddEmbedDomain}
+                >
+                  Add domain
+                </Button>
+              </div>
+              <p className="text-xs text-white/40">
+                Saved domains are the source of truth for this project. Removing
+                a domain revokes future access from that site.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Saved allowlist</Label>
+              <div className="rounded-md border border-white/10 bg-white/5">
+                {isLoadingEmbedDomains ? (
+                  <div className="px-3 py-3 text-sm text-white/50">
+                    Loading domains...
+                  </div>
+                ) : embedDomains.length === 0 ? (
+                  <div className="px-3 py-3 text-sm text-white/40">
+                    No domains saved yet.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-white/10">
+                    {embedDomains.map((domain) => (
+                      <div
+                        key={domain.id}
+                        className="flex items-center justify-between gap-3 px-3 py-2"
+                      >
+                        <span className="font-mono text-xs text-white/70">
+                          {domain.domain}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          disabled={isUpdatingEmbedDomains}
+                          onClick={() => handleDeleteEmbedDomain(domain.id)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {embedDomainError && (
+              <p className="text-sm text-red-400">{embedDomainError}</p>
+            )}
+
+            <Button
+              type="button"
+              onClick={handleGenerateEmbed}
+              disabled={isGeneratingEmbed || embedDomains.length === 0}
+              className="w-full"
+            >
+              {isGeneratingEmbed ? "Generating secure embed..." : "Generate secure embed"}
+            </Button>
+
+            {embedError && (
+              <p className="text-sm text-red-400">{embedError}</p>
+            )}
+
+            {generatedEmbed && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="embed-url">Embed page URL</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="embed-url"
+                      readOnly
+                      value={generatedEmbed.embedUrl}
+                      className="font-mono text-xs"
+                    />
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => handleCopyExport(generatedEmbed.embedUrl, "url")}
+                    >
+                      {copiedTarget === "url" ? "Copied" : "Copy URL"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="iframe-code">iframe code</Label>
+                  <textarea
+                    id="iframe-code"
+                    readOnly
+                    value={generatedEmbed.iframeCode}
+                    className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Token domain allowlist</Label>
+                  <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
+                    {generatedEmbed.allowedDomains.join(", ")}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter showCloseButton>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!generatedEmbed}
+              onClick={() =>
+                generatedEmbed &&
+                window.open(generatedEmbed.embedUrl, "_blank", "noopener,noreferrer")
+              }
+            >
+              Open page
+            </Button>
+            <Button
+              type="button"
+              disabled={!generatedEmbed}
+              onClick={() =>
+                generatedEmbed &&
+                handleCopyExport(generatedEmbed.iframeCode, "iframe")
+              }
+            >
+              {copiedTarget === "iframe" ? "Copied" : "Copy iframe"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
