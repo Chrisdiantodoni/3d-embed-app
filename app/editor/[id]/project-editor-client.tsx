@@ -114,7 +114,7 @@ type HistorySnapshot = SceneAsset[];
 type GeneratedEmbed = {
   embedUrl: string;
   iframeCode: string;
-  allowedDomains: string[];
+  updatedAt?: string | null;
 };
 type EmbedDomainRecord = {
   id: string;
@@ -1224,7 +1224,10 @@ function AssetLibraryPanel({
                       disabled={requestedPage === 1 || loading}
                       onClick={() =>
                         setPage((current) =>
-                          Math.max(1, (search === debouncedSearch ? current : 1) - 1),
+                          Math.max(
+                            1,
+                            (search === debouncedSearch ? current : 1) - 1,
+                          ),
                         )
                       }
                     >
@@ -1239,8 +1242,9 @@ function AssetLibraryPanel({
                       size="sm"
                       disabled={!hasNextPage || loading}
                       onClick={() =>
-                        setPage((current) =>
-                          (search === debouncedSearch ? current : 1) + 1,
+                        setPage(
+                          (current) =>
+                            (search === debouncedSearch ? current : 1) + 1,
                         )
                       }
                     >
@@ -1416,10 +1420,53 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     }
   }, [data.id]);
 
+  const hydrateEmbedAccess = useCallback(
+    (result: {
+      hasActiveToken?: boolean;
+      activeToken?: string | null;
+      updatedAt?: string | null;
+    }) => {
+      if (!result.hasActiveToken || !result.activeToken) {
+        setGeneratedEmbed(null);
+        return;
+      }
+
+      const embedUrl = `${baseUrl}/embed/${data.id}?token=${encodeURIComponent(result.activeToken)}`;
+      const iframeCode = `<iframe src="${embedUrl}" width="100%" height="600" style="border:0;" loading="lazy" allowfullscreen></iframe>`;
+
+      setGeneratedEmbed({
+        embedUrl,
+        iframeCode,
+        updatedAt: result.updatedAt ?? null,
+      });
+    },
+    [baseUrl, data.id],
+  );
+
+  const loadEmbedAccess = useCallback(async () => {
+    setEmbedError(null);
+
+    try {
+      const response = await fetch(`/api/projects/${data.id}/embed-access`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEmbedError(result.error || "Failed to load embed URL.");
+        return;
+      }
+
+      hydrateEmbedAccess(result);
+    } catch (error) {
+      console.error("Failed to load embed access:", error);
+      setEmbedError("Failed to load embed URL.");
+    }
+  }, [data.id, hydrateEmbedAccess]);
+
   useEffect(() => {
     if (!isExportOpen) return;
     void loadEmbedDomains();
-  }, [isExportOpen, loadEmbedDomains]);
+    void loadEmbedAccess();
+  }, [isExportOpen, loadEmbedDomains, loadEmbedAccess]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -1615,17 +1662,20 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     [sceneAssets, commit],
   );
 
-  const handleCopyExport = useCallback(async (value: string, target: "url" | "iframe") => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopiedTarget(target);
-      window.setTimeout(() => {
-        setCopiedTarget((current) => (current === target ? null : current));
-      }, 2000);
-    } catch (error) {
-      console.error("Failed to copy export value:", error);
-    }
-  }, []);
+  const handleCopyExport = useCallback(
+    async (value: string, target: "url" | "iframe") => {
+      try {
+        await navigator.clipboard.writeText(value);
+        setCopiedTarget(target);
+        window.setTimeout(() => {
+          setCopiedTarget((current) => (current === target ? null : current));
+        }, 2000);
+      } catch (error) {
+        console.error("Failed to copy export value:", error);
+      }
+    },
+    [],
+  );
 
   const handleAddEmbedDomain = useCallback(async () => {
     const domain = embedDomainInput.trim();
@@ -1664,42 +1714,45 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     }
   }, [data.id, embedDomainInput]);
 
-  const handleDeleteEmbedDomain = useCallback(async (domainId: string) => {
-    setIsUpdatingEmbedDomains(true);
-    setEmbedDomainError(null);
-    setGeneratedEmbed(null);
+  const handleDeleteEmbedDomain = useCallback(
+    async (domainId: string) => {
+      setIsUpdatingEmbedDomains(true);
+      setEmbedDomainError(null);
+      setGeneratedEmbed(null);
 
-    try {
-      const response = await fetch(
-        `/api/projects/${data.id}/embed-domains/${domainId}`,
-        { method: "DELETE" },
-      );
-      const result = await response.json();
+      try {
+        const response = await fetch(
+          `/api/projects/${data.id}/embed-domains/${domainId}`,
+          { method: "DELETE" },
+        );
+        const result = await response.json();
 
-      if (!response.ok) {
-        setEmbedDomainError(result.error || "Failed to delete domain.");
-        return;
+        if (!response.ok) {
+          setEmbedDomainError(result.error || "Failed to delete domain.");
+          return;
+        }
+
+        setEmbedDomains((prev) => prev.filter((item) => item.id !== domainId));
+      } catch (error) {
+        console.error("Failed to delete embed domain:", error);
+        setEmbedDomainError("Failed to delete domain.");
+      } finally {
+        setIsUpdatingEmbedDomains(false);
       }
-
-      setEmbedDomains((prev) => prev.filter((item) => item.id !== domainId));
-    } catch (error) {
-      console.error("Failed to delete embed domain:", error);
-      setEmbedDomainError("Failed to delete domain.");
-    } finally {
-      setIsUpdatingEmbedDomains(false);
-    }
-  }, [data.id]);
+    },
+    [data.id],
+  );
 
   const handleGenerateEmbed = useCallback(async () => {
     setIsGeneratingEmbed(true);
     setEmbedError(null);
 
     try {
-      const response = await fetch(`/api/projects/${data.id}/embed-token`, {
+      const response = await fetch(`/api/projects/${data.id}/embed-access`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          previewOrigin: window.location.origin,
+          action: "ensure",
         }),
       });
 
@@ -1710,21 +1763,68 @@ export default function ProjectEditorClient({ data }: { data: any }) {
         return;
       }
 
-      const embedUrl = `${baseUrl}/embed/${data.id}?token=${encodeURIComponent(result.token)}`;
-      const iframeCode = `<iframe src="${embedUrl}" width="100%" height="600" style="border:0;" loading="lazy" allowfullscreen></iframe>`;
-
-      setGeneratedEmbed({
-        embedUrl,
-        iframeCode,
-        allowedDomains: result.allowedDomains ?? [],
-      });
+      hydrateEmbedAccess(result);
     } catch (error) {
       console.error("Failed to generate embed token:", error);
       setEmbedError("Failed to generate embed token.");
     } finally {
       setIsGeneratingEmbed(false);
     }
-  }, [baseUrl, data.id]);
+  }, [data.id, hydrateEmbedAccess]);
+
+  const handleRegenerateEmbed = useCallback(async () => {
+    setIsGeneratingEmbed(true);
+    setEmbedError(null);
+
+    try {
+      const response = await fetch(`/api/projects/${data.id}/embed-access`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "regenerate",
+        }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEmbedError(result.error || "Failed to regenerate embed token.");
+        return;
+      }
+
+      hydrateEmbedAccess(result);
+    } catch (error) {
+      console.error("Failed to regenerate embed token:", error);
+      setEmbedError("Failed to regenerate embed token.");
+    } finally {
+      setIsGeneratingEmbed(false);
+    }
+  }, [data.id, hydrateEmbedAccess]);
+
+  const handleRevokeEmbed = useCallback(async () => {
+    setIsGeneratingEmbed(true);
+    setEmbedError(null);
+
+    try {
+      const response = await fetch(`/api/projects/${data.id}/embed-access`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "revoke" }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setEmbedError(result.error || "Failed to revoke embed access.");
+        return;
+      }
+
+      setGeneratedEmbed(null);
+    } catch (error) {
+      console.error("Failed to revoke embed access:", error);
+      setEmbedError("Failed to revoke embed access.");
+    } finally {
+      setIsGeneratingEmbed(false);
+    }
+  }, [data.id]);
 
   return (
     <div className="h-full w-full flex flex-col bg-zinc-950">
@@ -1920,7 +2020,8 @@ export default function ProjectEditorClient({ data }: { data: any }) {
       <AssetLibraryPanel onAddAsset={handleAddAsset} />
 
       <Dialog open={isExportOpen} onOpenChange={setIsExportOpen}>
-        <DialogContent className="max-w-2xl">
+        {/* Update: Tambahkan max-h dan overflow agar tidak keluar layar saat konten muncul */}
+        <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Secure embed export</DialogTitle>
             <DialogDescription>
@@ -1929,56 +2030,61 @@ export default function ProjectEditorClient({ data }: { data: any }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
+          <div className="space-y-6 py-2">
+            {/* Input Section */}
+            <div className="space-y-3">
               <Label htmlFor="embed-domain-input">Allowed domains</Label>
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <Input
                   id="embed-domain-input"
                   value={embedDomainInput}
                   onChange={(e) => setEmbedDomainInput(e.target.value)}
                   placeholder="https://customer.com"
+                  className="flex-1"
                 />
                 <Button
                   type="button"
                   variant="secondary"
+                  className="shrink-0"
                   disabled={isUpdatingEmbedDomains || !embedDomainInput.trim()}
                   onClick={handleAddEmbedDomain}
                 >
                   Add domain
                 </Button>
               </div>
-              <p className="text-xs text-white/40">
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
                 Saved domains are the source of truth for this project. Removing
                 a domain revokes future access from that site.
               </p>
             </div>
 
+            {/* List Section */}
             <div className="space-y-2">
               <Label>Saved allowlist</Label>
-              <div className="rounded-md border border-white/10 bg-white/5">
+              <div className="rounded-md border border-border bg-muted/30">
                 {isLoadingEmbedDomains ? (
-                  <div className="px-3 py-3 text-sm text-white/50">
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center">
                     Loading domains...
                   </div>
                 ) : embedDomains.length === 0 ? (
-                  <div className="px-3 py-3 text-sm text-white/40">
+                  <div className="px-3 py-4 text-sm text-muted-foreground text-center italic">
                     No domains saved yet.
                   </div>
                 ) : (
-                  <div className="divide-y divide-white/10">
+                  <div className="divide-y divide-border max-h-[150px] overflow-y-auto">
                     {embedDomains.map((domain) => (
                       <div
                         key={domain.id}
-                        className="flex items-center justify-between gap-3 px-3 py-2"
+                        className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-muted/50 transition-colors"
                       >
-                        <span className="font-mono text-xs text-white/70">
+                        <span className="font-mono text-xs truncate">
                           {domain.domain}
                         </span>
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
+                          className="h-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                           disabled={isUpdatingEmbedDomains}
                           onClick={() => handleDeleteEmbedDomain(domain.id)}
                         >
@@ -1992,7 +2098,9 @@ export default function ProjectEditorClient({ data }: { data: any }) {
             </div>
 
             {embedDomainError && (
-              <p className="text-sm text-red-400">{embedDomainError}</p>
+              <p className="text-sm font-medium text-destructive">
+                {embedDomainError}
+              </p>
             )}
 
             <Button
@@ -2001,28 +2109,32 @@ export default function ProjectEditorClient({ data }: { data: any }) {
               disabled={isGeneratingEmbed || embedDomains.length === 0}
               className="w-full"
             >
-              {isGeneratingEmbed ? "Generating secure embed..." : "Generate secure embed"}
+              {isGeneratingEmbed
+                ? "Preparing embed..."
+                : generatedEmbed
+                  ? "Load active embed URL"
+                  : "Create embed URL"}
             </Button>
 
-            {embedError && (
-              <p className="text-sm text-red-400">{embedError}</p>
-            )}
-
+            {/* Generated Content Section */}
             {generatedEmbed && (
-              <>
+              <div className="space-y-4 pt-4 border-t border-border animate-in fade-in slide-in-from-top-2">
                 <div className="space-y-2">
                   <Label htmlFor="embed-url">Embed page URL</Label>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Input
                       id="embed-url"
                       readOnly
                       value={generatedEmbed.embedUrl}
-                      className="font-mono text-xs"
+                      className="font-mono text-xs bg-muted"
                     />
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={() => handleCopyExport(generatedEmbed.embedUrl, "url")}
+                      className="shrink-0"
+                      onClick={() =>
+                        handleCopyExport(generatedEmbed.embedUrl, "url")
+                      }
                     >
                       {copiedTarget === "url" ? "Copied" : "Copy URL"}
                     </Button>
@@ -2035,42 +2147,58 @@ export default function ProjectEditorClient({ data }: { data: any }) {
                     id="iframe-code"
                     readOnly
                     value={generatedEmbed.iframeCode}
-                    className="min-h-32 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none"
+                    className="min-h-[100px] w-full rounded-md border border-input bg-muted px-3 py-2 font-mono text-[11px] text-foreground outline-none focus:ring-1 focus:ring-ring"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label>Token domain allowlist</Label>
-                  <div className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/60">
-                    {generatedEmbed.allowedDomains.join(", ")}
-                  </div>
-                </div>
-              </>
+                {generatedEmbed.updatedAt && (
+                  <p className="text-[10px] text-muted-foreground text-right">
+                    Active token updated:{" "}
+                    {new Date(generatedEmbed.updatedAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
-          <DialogFooter showCloseButton>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={!generatedEmbed}
-              onClick={() =>
-                generatedEmbed &&
-                window.open(generatedEmbed.embedUrl, "_blank", "noopener,noreferrer")
-              }
-            >
-              Open page
-            </Button>
-            <Button
-              type="button"
-              disabled={!generatedEmbed}
-              onClick={() =>
-                generatedEmbed &&
-                handleCopyExport(generatedEmbed.iframeCode, "iframe")
-              }
-            >
-              {copiedTarget === "iframe" ? "Copied" : "Copy iframe"}
-            </Button>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <div className="flex flex-wrap gap-2 justify-end w-full">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={isGeneratingEmbed || !generatedEmbed}
+                onClick={handleRevokeEmbed}
+                className="text-destructive"
+              >
+                Revoke
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isGeneratingEmbed || embedDomains.length === 0}
+                onClick={handleRegenerateEmbed}
+              >
+                Regenerate
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                disabled={!generatedEmbed}
+                onClick={() =>
+                  generatedEmbed &&
+                  window.open(
+                    generatedEmbed.embedUrl,
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }
+              >
+                Open
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProjectById } from "@/app/api/projects/[id]/route";
 import { verifyEmbedToken } from "@/lib/embed-auth";
+import { getProjectActiveEmbedToken } from "@/lib/project-embed-access";
 
 export async function GET(request: NextRequest) {
+  try {
   const url = request.nextUrl.searchParams.get("url");
   const token = request.nextUrl.searchParams.get("token");
   const projectId = request.nextUrl.searchParams.get("projectId");
@@ -11,7 +13,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Missing url" }, { status: 400 });
   }
 
-  // Whitelist domain R2 kamu
   if (!url.startsWith("https://pub-9e69d67f0bf3407992765577a7c517ea.r2.dev/")) {
     return NextResponse.json({ error: "Domain not allowed" }, { status: 403 });
   }
@@ -25,29 +26,14 @@ export async function GET(request: NextRequest) {
     }
 
     const verifiedToken = verifyEmbedToken(token);
-    if (!verifiedToken.ok || verifiedToken.payload.projectId !== projectId) {
+    const activeToken = await getProjectActiveEmbedToken(projectId);
+    if (
+      !verifiedToken.ok ||
+      verifiedToken.payload.projectId !== projectId ||
+      !activeToken ||
+      activeToken !== token
+    ) {
       return NextResponse.json({ error: "Invalid embed token" }, { status: 403 });
-    }
-
-    const requestOrigin = request.nextUrl.origin;
-    const referer = request.headers.get("referer");
-    if (!referer) {
-      return NextResponse.json({ error: "Missing referer" }, { status: 403 });
-    }
-
-    try {
-      const refererUrl = new URL(referer);
-      if (
-        refererUrl.origin !== requestOrigin ||
-        refererUrl.pathname !== `/embed/${projectId}`
-      ) {
-        return NextResponse.json(
-          { error: "Invalid embed referer" },
-          { status: 403 },
-        );
-      }
-    } catch {
-      return NextResponse.json({ error: "Invalid referer" }, { status: 403 });
     }
 
     const project = await getProjectById(projectId);
@@ -64,9 +50,8 @@ export async function GET(request: NextRequest) {
   const response = await fetch(url);
 
   if (!response.ok) {
-    return NextResponse.json(
-      { error: "Failed to fetch" },
-      { status: response.status },
+    throw new Error(
+      `R2 fetch failed with status ${response.status}: ${url}`,
     );
   }
 
@@ -79,4 +64,11 @@ export async function GET(request: NextRequest) {
       "Cache-Control": "public, max-age=31536000",
     },
   });
+  } catch (error) {
+    console.error("Proxy error:", error);
+    return NextResponse.json(
+      { error: "Proxy error", detail: String(error) },
+      { status: 500 },
+    );
+  }
 }

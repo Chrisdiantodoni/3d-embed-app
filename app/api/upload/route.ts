@@ -79,11 +79,10 @@ export async function POST(request: NextRequest) {
             id: projectId,
             userId,
             name: name.trim(),
-            fileName: file.name,
-            fileUrl,
-            fileSize: file.size,
-            createdAt: now,
-            updatedAt: now,
+            description: file.name,
+            thumbnailUrl: fileUrl,
+            lightingSettings: "{}",
+            cameraSettings: "{}",
         });
 
         return NextResponse.json(

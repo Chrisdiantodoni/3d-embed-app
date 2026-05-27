@@ -3,7 +3,6 @@ import { createHmac, timingSafeEqual } from "crypto";
 export type EmbedTokenPayload = {
   version: 1;
   projectId: string;
-  allowedDomains: string[];
   iat: number;
   exp: number;
 };
@@ -28,13 +27,16 @@ function encodeBase64Url(value: string) {
 
 function decodeBase64Url(value: string) {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padding = normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
+  const padding =
+    normalized.length % 4 === 0 ? "" : "=".repeat(4 - (normalized.length % 4));
 
   return Buffer.from(`${normalized}${padding}`, "base64").toString("utf8");
 }
 
 function signValue(value: string) {
-  return createHmac("sha256", getEmbedTokenSecret()).update(value).digest("base64url");
+  return createHmac("sha256", getEmbedTokenSecret())
+    .update(value)
+    .digest("base64url");
 }
 
 export function normalizeAllowedDomain(value: string) {
@@ -43,9 +45,10 @@ export function normalizeAllowedDomain(value: string) {
   if (!trimmed) return null;
 
   try {
-    const url = trimmed.startsWith("http://") || trimmed.startsWith("https://")
-      ? new URL(trimmed)
-      : new URL(`https://${trimmed}`);
+    const url =
+      trimmed.startsWith("http://") || trimmed.startsWith("https://")
+        ? new URL(trimmed)
+        : new URL(`https://${trimmed}`);
 
     return url.origin.toLowerCase();
   } catch {
@@ -55,14 +58,12 @@ export function normalizeAllowedDomain(value: string) {
 
 export function createEmbedToken(input: {
   projectId: string;
-  allowedDomains: string[];
   expiresInSeconds?: number;
 }) {
   const now = Math.floor(Date.now() / 1000);
   const payload: EmbedTokenPayload = {
     version: 1,
     projectId: input.projectId,
-    allowedDomains: [...new Set(input.allowedDomains.map((item) => item.toLowerCase()))],
     iat: now,
     exp: now + (input.expiresInSeconds ?? 60 * 60 * 24 * 30),
   };
@@ -92,13 +93,15 @@ export function verifyEmbedToken(token: string) {
   }
 
   try {
-    const payload = JSON.parse(decodeBase64Url(encodedPayload)) as EmbedTokenPayload;
+    const payload = JSON.parse(
+      decodeBase64Url(encodedPayload),
+    ) as EmbedTokenPayload;
 
     if (payload.version !== 1) {
       return { ok: false as const, error: "Unsupported token version." };
     }
 
-    if (!payload.projectId || !Array.isArray(payload.allowedDomains)) {
+    if (!payload.projectId) {
       return { ok: false as const, error: "Invalid token payload." };
     }
 
@@ -150,7 +153,23 @@ export function getRequestOriginFromHeaders(headers: Headers) {
   return `${proto}://${host}`.toLowerCase();
 }
 
-export function isAllowedDomain(origin: string | null, allowedDomains: string[]) {
+function normalizeOriginForComparison(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.host.replace(/^www\./, "");
+    return `${url.protocol}//${host}${url.port ? `:${url.port}` : ""}`.toLowerCase();
+  } catch {
+    return value.toLowerCase();
+  }
+}
+
+export function isAllowedDomain(
+  origin: string | null,
+  allowedDomains: string[],
+) {
   if (!origin) return false;
-  return allowedDomains.some((domain) => domain.toLowerCase() === origin.toLowerCase());
+  const normalizedOrigin = normalizeOriginForComparison(origin);
+  return allowedDomains.some(
+    (domain) => normalizeOriginForComparison(domain) === normalizedOrigin,
+  );
 }

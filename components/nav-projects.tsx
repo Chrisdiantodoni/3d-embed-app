@@ -13,18 +13,20 @@ import {
 
 export function NavProjects({
   projects,
+  label = "Main",
 }: {
   projects: {
     name: string;
     url: string;
     icon: LucideIcon;
   }[];
+  label?: string;
 }) {
-  const pathname = usePathname(); // Ambil URL saat ini
+  const pathname = usePathname();
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>Main</SidebarGroupLabel>
+      <SidebarGroupLabel>{label}</SidebarGroupLabel>
       <SidebarMenu>
         {projects.map((item) => {
           // Logika isActive: Cek apakah pathname sama dengan URL item

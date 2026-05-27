@@ -1,190 +1,115 @@
 "use client";
 
 import * as React from "react";
+import { useUser } from "@clerk/nextjs";
+import { toast } from "sonner";
 import {
-  AudioWaveform,
-  BarChart3,
-  BookOpen,
-  Bot,
-  Command,
-  CreditCard,
   FolderKanban,
-  GalleryVerticalEnd,
   Globe,
   Library,
-  Settings2,
-  SquareTerminal,
-  Webhook,
+  Box,
+  LayoutDashboard,
+  BarChart3,
+  Settings,
+  Crown,
 } from "lucide-react";
 
 import { NavProjects } from "@/components/nav-projects";
 import { NavUser } from "@/components/nav-user";
-import { TeamSwitcher } from "@/components/team-switcher";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
   SidebarRail,
+  SidebarGroup,
 } from "@/components/ui/sidebar";
 
-// This is sample data.
-const data = {
-  user: {
-    name: "shadcn",
-    email: "m@example.com",
-    avatar: "/avatars/shadcn.jpg",
+const navMain = [
+  {
+    name: "Dashboard",
+    url: "/dashboard",
+    icon: LayoutDashboard,
   },
-  teams: [
-    {
-      name: "Acme Inc",
-      logo: GalleryVerticalEnd,
-      plan: "Enterprise",
-    },
-    {
-      name: "Acme Corp.",
-      logo: AudioWaveform,
-      plan: "Startup",
-    },
-    {
-      name: "Evil Corp.",
-      logo: Command,
-      plan: "Free",
-    },
-  ],
-  navMain: [
-    {
-      title: "Playground",
-      url: "#",
-      icon: SquareTerminal,
-      isActive: true,
-      items: [
-        {
-          title: "History",
-          url: "#",
-        },
-        {
-          title: "Starred",
-          url: "#",
-        },
-        {
-          title: "Settings",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Models",
-      url: "#",
-      icon: Bot,
-      items: [
-        {
-          title: "Genesis",
-          url: "#",
-        },
-        {
-          title: "Explorer",
-          url: "#",
-        },
-        {
-          title: "Quantum",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Documentation",
-      url: "#",
-      icon: BookOpen,
-      items: [
-        {
-          title: "Introduction",
-          url: "#",
-        },
-        {
-          title: "Get Started",
-          url: "#",
-        },
-        {
-          title: "Tutorials",
-          url: "#",
-        },
-        {
-          title: "Changelog",
-          url: "#",
-        },
-      ],
-    },
-    {
-      title: "Settings",
-      url: "#",
-      icon: Settings2,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
-          url: "#",
-        },
-      ],
-    },
-  ],
-  projects: [
-    {
-      name: "Asset Library",
-      url: "/assets-library",
-      icon: Library,
-    },
-    {
-      name: "My Projects",
-      url: "/projects",
-      icon: FolderKanban,
-    },
-    {
-      name: "Analytics",
-      url: "/analytics",
-      icon: BarChart3,
-    },
-    {
-      name: "Domain",
-      url: "/domains",
-      icon: Globe,
-    },
-    {
-      name: "Api Integrations",
-      url: "/dashboard/api",
-      icon: Webhook,
-    },
-    {
-      name: "Account Or Billings",
-      url: "/dashboard/billing",
-      icon: CreditCard,
-    },
-  ],
-};
+  {
+    name: "Projects",
+    url: "/projects",
+    icon: FolderKanban,
+  },
+  {
+    name: "Asset Library",
+    url: "/assets-library",
+    icon: Library,
+  },
+  {
+    name: "Domains",
+    url: "/domains",
+    icon: Globe,
+  },
+  {
+    name: "Analytics",
+    url: "/analytics",
+    icon: BarChart3,
+  },
+];
+
+const navBottom = [
+  {
+    name: "Settings",
+    url: "/settings",
+    icon: Settings,
+  },
+];
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { user } = useUser();
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild>
+              <a href="/dashboard">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                  <Box className="size-4" />
+                </div>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">Vur3D</span>
+                  <span className="truncate text-xs">Free</span>
+                </div>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {/* <NavMain items={data.navMain} /> */}
-        <NavProjects projects={data.projects} />
+        <NavProjects projects={navMain} label="Workspace" />
+        <NavProjects projects={navBottom} label="" />
+        <SidebarGroup>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                onClick={() =>
+                  toast("Upgrade coming soon.", {
+                    description:
+                      "Enjoy unlimited access during the free beta. Paid plans are on the way!",
+                  })
+                }
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Crown className="size-4" />
+                <span>Upgrade</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser user={user ?? null} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

@@ -5,8 +5,11 @@ const isPublicRoute = createRouteMatcher([
   "/sign-in(.*)", // Halaman login
   "/sign-up(.*)", // Halaman daftar
   "/embed/(.*)", // Public signed embeds
+  "/v/(.*)", // Short URL redirect for embeds
   "/api/proxy(.*)", // Asset proxy for embeds
   "/api/webhook(.*)", // Jika nanti butuh webhook untuk Stripe/Clerk
+  "/privacy", // Privacy policy
+  "/terms", // Terms of service
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
@@ -19,7 +22,7 @@ export default clerkMiddleware(async (auth, req) => {
 export const config = {
   matcher: [
     // Melindungi semua route kecuali file statis (gambar, css, js, dll)
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest|glb)).*)",
     // Selalu jalankan untuk API routes
     "/(api|trpc)(.*)",
   ],

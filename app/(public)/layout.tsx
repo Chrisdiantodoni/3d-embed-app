@@ -17,7 +17,7 @@ export default function RootLayout({
     <>
       <header className="fixed top-0 w-full z-50 border-b bg-background/80 backdrop-blur-md border-border">
         <div className="flex justify-between items-center max-w-7xl mx-auto px-4 h-16">
-          <h1 className="text-xl font-bold tracking-tight">Vur3D</h1>
+          <Link href="/" className="text-xl font-bold tracking-tight hover:opacity-80 transition-opacity">Vur3D</Link>
 
           <nav className="flex items-center gap-3">
             {/* JIKA BELUM LOGIN */}

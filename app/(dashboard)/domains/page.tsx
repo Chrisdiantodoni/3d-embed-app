@@ -32,6 +32,11 @@ type EmbedDomain = {
   id: string;
   domain: string;
 };
+type EmbedAccess = {
+  hasActiveToken: boolean;
+  activeToken: string | null;
+  updatedAt?: string | null;
+};
 
 export default function DomainsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -43,11 +48,41 @@ export default function DomainsPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [baseUrl, setBaseUrl] = useState("");
+  const [embedAccess, setEmbedAccess] = useState<EmbedAccess | null>(null);
+  const [codeTab, setCodeTab] = useState<"html" | "jsx" | "vue" | "svelte">("html");
 
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === selectedProjectId) ?? null,
     [projects, selectedProjectId],
   );
+  const activeEmbedUrl =
+    embedAccess?.hasActiveToken && embedAccess.activeToken
+      ? `${baseUrl}/embed/${selectedProjectId}?token=${encodeURIComponent(embedAccess.activeToken)}`
+      : "";
+  const activeIframeCode = activeEmbedUrl
+    ? `<iframe src="${activeEmbedUrl}" width="100%" height="600" style="border:0;" loading="lazy" allowfullscreen></iframe>`
+    : "";
+  const activeJsxCode = activeEmbedUrl
+    ? `<iframe\n  src="${activeEmbedUrl}"\n  width="100%"\n  height={600}\n  style={{ border: 0 }}\n  loading="lazy"\n  allowFullScreen\n/>`
+    : "";
+  const activeVueCode = activeEmbedUrl
+    ? `<iframe\n  :src="'${activeEmbedUrl}'"\n  width="100%"\n  height="600"\n  style="border:0;"\n  loading="lazy"\n  allowfullscreen\n/>`
+    : "";
+  const activeSvelteCode = activeEmbedUrl
+    ? `<iframe\n  src="${activeEmbedUrl}"\n  width="100%"\n  height="600"\n  style="border:0;"\n  loading="lazy"\n  allowfullscreen\n/>`
+    : "";
+
+  const codeSnippets: Record<string, string> = {
+    html: activeIframeCode,
+    jsx: activeJsxCode,
+    vue: activeVueCode,
+    svelte: activeSvelteCode,
+  };
+
+  useEffect(() => {
+    setBaseUrl(window.location.origin);
+  }, []);
 
   useEffect(() => {
     async function loadProjects() {
@@ -89,6 +124,7 @@ export default function DomainsPage() {
     async function loadDomains() {
       if (!selectedProjectId) {
         setDomains([]);
+        setEmbedAccess(null);
         return;
       }
 
@@ -96,24 +132,32 @@ export default function DomainsPage() {
       setError(null);
 
       try {
-        const response = await fetch(
-          `/api/projects/${selectedProjectId}/embed-domains`,
-        );
-        const result = await response.json();
+        const [domainsResponse, accessResponse] = await Promise.all([
+          fetch(`/api/projects/${selectedProjectId}/embed-domains`),
+          fetch(`/api/projects/${selectedProjectId}/embed-access`),
+        ]);
+        const [domainsResult, accessResult] = await Promise.all([
+          domainsResponse.json(),
+          accessResponse.json(),
+        ]);
 
-        if (!response.ok) {
-          setError(result.error || "Failed to load domains.");
+        if (!domainsResponse.ok) {
+          setError(domainsResult.error || "Failed to load domains.");
           return;
         }
 
         setDomains(
-          (result.domains ?? []).map(
+          (domainsResult.domains ?? []).map(
             (domain: { id: string; domain: string }) => ({
               id: domain.id,
               domain: domain.domain,
             }),
           ),
         );
+
+        if (accessResponse.ok) {
+          setEmbedAccess(accessResult);
+        }
       } catch (loadError) {
         console.error("Failed to load domains:", loadError);
         setError("Failed to load domains.");
@@ -124,6 +168,10 @@ export default function DomainsPage() {
 
     void loadDomains();
   }, [selectedProjectId]);
+
+  function hydrateEmbedAccess(result: EmbedAccess) {
+    setEmbedAccess(result);
+  }
 
   async function handleAddDomain() {
     if (!selectedProjectId || !domainInput.trim()) return;
@@ -192,6 +240,114 @@ export default function DomainsPage() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function handleEnsureEmbed() {
+    if (!selectedProjectId) return;
+
+    setIsSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `/api/projects/${selectedProjectId}/embed-access`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "ensure",
+          }),
+        },
+      );
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || "Failed to prepare embed URL.");
+        return;
+      }
+
+      hydrateEmbedAccess(result);
+      setMessage("Active embed URL is ready.");
+    } catch (submitError) {
+      console.error("Failed to prepare embed URL:", submitError);
+      setError("Failed to prepare embed URL.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleRegenerateEmbed() {
+    if (!selectedProjectId) return;
+
+    setIsSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `/api/projects/${selectedProjectId}/embed-access`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "regenerate",
+          }),
+        },
+      );
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || "Failed to regenerate embed URL.");
+        return;
+      }
+
+      hydrateEmbedAccess(result);
+      setMessage("Embed URL regenerated. Old URL is no longer valid.");
+    } catch (submitError) {
+      console.error("Failed to regenerate embed URL:", submitError);
+      setError("Failed to regenerate embed URL.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function handleRevokeEmbed() {
+    if (!selectedProjectId) return;
+
+    setIsSubmitting(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch(
+        `/api/projects/${selectedProjectId}/embed-access`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "revoke" }),
+        },
+      );
+      const result = await response.json();
+
+      if (!response.ok) {
+        setError(result.error || "Failed to revoke embed URL.");
+        return;
+      }
+
+      hydrateEmbedAccess(result);
+      setMessage("Embed access revoked.");
+    } catch (submitError) {
+      console.error("Failed to revoke embed URL:", submitError);
+      setError("Failed to revoke embed URL.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function copyToClipboard(value: string, successMessage: string) {
+    await navigator.clipboard.writeText(value);
+    setMessage(successMessage);
   }
 
   return (
@@ -314,6 +470,102 @@ export default function DomainsPage() {
                 </Button>
               </div>
             </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-medium">Active Embed URL</h3>
+                <p className="text-sm text-muted-foreground">
+                  Reuse the current URL anytime, or regenerate it to invalidate the old one.
+                </p>
+              </div>
+              <Badge variant={embedAccess?.hasActiveToken ? "default" : "secondary"}>
+                {embedAccess?.hasActiveToken ? "Active" : "Inactive"}
+              </Badge>
+            </div>
+
+            <Input
+              readOnly
+              value={activeEmbedUrl}
+              placeholder="No active embed URL yet"
+            />
+
+            {/* Code format tabs */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1 border-b pb-2">
+                {(["html", "jsx", "vue", "svelte"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setCodeTab(tab)}
+                    className={`px-3 py-1 text-xs font-mono rounded-md transition-colors ${
+                      codeTab === tab
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {tab === "html" ? "HTML" : tab.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                readOnly
+                value={codeSnippets[codeTab]}
+                placeholder="No active embed code yet"
+                className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground outline-none"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                onClick={handleEnsureEmbed}
+                disabled={!selectedProjectId || isSubmitting || domains.length === 0}
+              >
+                {embedAccess?.hasActiveToken ? "Load Active URL" : "Create URL"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRegenerateEmbed}
+                disabled={!selectedProjectId || isSubmitting || domains.length === 0}
+              >
+                Regenerate
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={handleRevokeEmbed}
+                disabled={!selectedProjectId || isSubmitting || !embedAccess?.hasActiveToken}
+              >
+                Revoke Access
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => copyToClipboard(activeEmbedUrl, "Embed URL copied.")}
+                disabled={!activeEmbedUrl}
+              >
+                Copy Embed URL
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => copyToClipboard(codeSnippets[codeTab], `${codeTab === "html" ? "HTML" : codeTab.toUpperCase()} code copied.`)}
+                disabled={!activeEmbedUrl}
+              >
+                Copy {codeTab === "html" ? "HTML" : codeTab.toUpperCase()}
+              </Button>
+            </div>
+
+            {embedAccess?.updatedAt && (
+              <p className="text-xs text-muted-foreground">
+                Last updated: {new Date(embedAccess.updatedAt).toLocaleString()}
+              </p>
+            )}
           </div>
 
           <Separator />

@@ -70,13 +70,15 @@ export async function createAssetAction(formData: FormData) {
     const buffer = Buffer.from(arrayBuffer);
 
     let thumbnailUrl = null;
-    const thumbBuffer = Buffer.from(await thumbFile!.arrayBuffer());
-    const cloudinaryResponse = await uploadToCloudinary(thumbBuffer, {
-      folder: "3d-thumbnails",
-      public_id: `thumb-${Date.now()}`,
-      format: "webp",
-    });
-    thumbnailUrl = cloudinaryResponse.secure_url;
+    if (thumbFile) {
+      const thumbBuffer = Buffer.from(await thumbFile.arrayBuffer());
+      const cloudinaryResponse = await uploadToCloudinary(thumbBuffer, {
+        folder: "3d-thumbnails",
+        public_id: `thumb-${Date.now()}`,
+        format: "webp",
+      });
+      thumbnailUrl = cloudinaryResponse.secure_url;
+    }
 
     const fileExtension = file.name.split(".").pop();
     const uniqueFileName = `${uuidv4()}.${fileExtension}`;

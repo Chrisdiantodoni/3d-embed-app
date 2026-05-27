@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -53,6 +54,8 @@ export interface ProjectPayload {
 }
 
 const CreateProjectModal = () => {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
   // --- States ---
   const [name, setName] = useState("");
   const [environMent, setEnvironment] = useState("studio");
@@ -138,7 +141,9 @@ const CreateProjectModal = () => {
         return res;
       },
       onSuccess: (res) => {
-        if (res.success) {
+        if (res.success && res.projectId) {
+          setOpen(false);
+          router.push(`/editor/${res.projectId}`);
         }
       },
       onError: (res) => {
@@ -164,7 +169,7 @@ const CreateProjectModal = () => {
   };
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="lg" className="gap-2 shadow-sm">
           <Plus className="h-4 w-4" /> Create New Project

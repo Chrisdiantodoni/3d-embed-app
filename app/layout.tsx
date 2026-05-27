@@ -1,15 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import {
-  ClerkProvider,
-  UserButton,
-  SignInButton,
-  SignUpButton,
-  Show,
-} from "@clerk/nextjs";
-import { Button } from "@/components/ui/button";
-import Link from "next/link";
+import { ClerkProvider } from "@clerk/nextjs";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "next-themes";
 import QueryProvider from "@/providers/query-provider";
@@ -35,25 +27,25 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
-      <QueryProvider>
-        <TooltipProvider>
-          <html lang="en" suppressHydrationWarning>
-            <body
-              className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
-            >
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+      >
+        <ClerkProvider>
+          <QueryProvider>
+            <TooltipProvider>
               <ThemeProvider
                 attribute="class"
-                defaultTheme="dark" // Ubah dari "system" ke "light"
-                enableSystem={false} // Matikan deteksi otomatis dari OS/Browser
+                defaultTheme="dark"
+                enableSystem={false}
                 disableTransitionOnChange
               >
                 {children}
               </ThemeProvider>
-            </body>
-          </html>
-        </TooltipProvider>
-      </QueryProvider>
-    </ClerkProvider>
+            </TooltipProvider>
+          </QueryProvider>
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useRef, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
 import { ContactShadows, Environment, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -37,6 +37,18 @@ type EmbedSceneClientProps = {
     sceneAssets: SceneAsset[];
   };
 };
+
+function trackEvent(
+  projectId: string,
+  eventType: string,
+  metadata?: Record<string, unknown>,
+) {
+  fetch("/api/analytics", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, eventType, metadata }),
+  }).catch(() => {});
+}
 
 function toProxyUrl(url: string, projectId: string, token: string) {
   if (
@@ -81,6 +93,38 @@ function SceneModel({
         asset.transform.scale.y,
         asset.transform.scale.z,
       ]}
+    />
+  );
+}
+
+function TrackedControls({ projectId, cameraTarget }: { projectId: string; cameraTarget: [number, number, number] }) {
+  const viewFired = useRef(false);
+  const lastInteraction = useRef(0);
+  const interactionToggle = useRef(0);
+
+  useEffect(() => {
+    if (!viewFired.current) {
+      viewFired.current = true;
+      trackEvent(projectId, "view");
+    }
+  }, [projectId]);
+
+  const handleInteractionEnd = useCallback(() => {
+    const now = Date.now();
+    if (now - lastInteraction.current < 3000) return;
+    lastInteraction.current = now;
+    interactionToggle.current += 1;
+    const eventType = interactionToggle.current % 2 === 0 ? "rotate" : "zoom";
+    trackEvent(projectId, eventType);
+  }, [projectId]);
+
+  return (
+    <OrbitControls
+      makeDefault
+      target={new THREE.Vector3(...cameraTarget)}
+      enablePan
+      enableZoom
+      onEnd={handleInteractionEnd}
     />
   );
 }
@@ -139,12 +183,7 @@ export default function EmbedSceneClient({ data }: EmbedSceneClientProps) {
             />
           )}
 
-          <OrbitControls
-            makeDefault
-            target={new THREE.Vector3(...cameraTarget)}
-            enablePan
-            enableZoom
-          />
+          <TrackedControls projectId={data.projectId} cameraTarget={cameraTarget} />
         </Suspense>
       </Canvas>
     </div>

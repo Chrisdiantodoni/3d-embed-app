@@ -1,7 +1,6 @@
 import { headers } from "next/headers";
 import { getProjectById } from "@/app/api/projects/[id]/route";
 import {
-  getRequestOriginFromHeaders,
   getSourceOriginFromHeaders,
   isAllowedDomain,
   verifyEmbedToken,
@@ -14,12 +13,14 @@ type Props = {
   searchParams: Promise<{ token?: string }>;
 };
 
-export default async function EmbedProjectPage({ params, searchParams }: Props) {
+export default async function EmbedProjectPage({
+  params,
+  searchParams,
+}: Props) {
   const { id } = await params;
   const { token } = await searchParams;
   const requestHeaders = await headers();
   const sourceOrigin = getSourceOriginFromHeaders(requestHeaders);
-  const requestOrigin = getRequestOriginFromHeaders(requestHeaders);
 
   if (!token) {
     return (
@@ -41,13 +42,8 @@ export default async function EmbedProjectPage({ params, searchParams }: Props) 
 
   const savedDomains = await listProjectEmbedDomains(id);
   const savedOrigins = savedDomains.map((item) => item.domain);
-  const isPreviewOnAppOrigin =
-    Boolean(sourceOrigin) && Boolean(requestOrigin) && sourceOrigin === requestOrigin;
 
-  if (
-    !isAllowedDomain(sourceOrigin, verifiedToken.payload.allowedDomains) ||
-    (!isPreviewOnAppOrigin && !isAllowedDomain(sourceOrigin, savedOrigins))
-  ) {
+  if (sourceOrigin && !isAllowedDomain(sourceOrigin, savedOrigins)) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-zinc-950 px-6 text-center text-sm text-zinc-400">
         This embed is not allowed on this domain.
@@ -71,7 +67,9 @@ export default async function EmbedProjectPage({ params, searchParams }: Props) 
     settings: projectData.settings,
     sceneAssets: projectData.sceneAssets
       .filter(
-        (asset): asset is typeof asset & {
+        (
+          asset,
+        ): asset is typeof asset & {
           id: string;
           name: string;
           url: string;

@@ -113,3 +113,43 @@ export const projectEmbedDomains = sqliteTable(
     domainIdx: index("ped_domain_idx").on(table.domain),
   }),
 );
+
+export const projectEmbedAccess = sqliteTable(
+  "project_embed_access",
+  {
+    projectId: text("project_id")
+      .primaryKey()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    activeToken: text("active_token"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (table) => ({
+    updatedIdx: index("pea_updated_idx").on(table.updatedAt),
+  }),
+);
+
+export const analyticsEvents = sqliteTable(
+  "analytics_events",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    metadata: text("metadata"),
+    createdAt: integer("created_at", { mode: "timestamp" }).default(
+      sql`(strftime('%s', 'now'))`,
+    ),
+  },
+  (table) => ({
+    projectIdx: index("ae_project_id_idx").on(table.projectId),
+    typeIdx: index("ae_event_type_idx").on(table.eventType),
+  }),
+);

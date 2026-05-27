@@ -6,6 +6,7 @@ import {
   FieldValues,
   Path,
   RegisterOptions,
+  type DefaultValues,
 } from "react-hook-form";
 import { Input } from "./input";
 import { Label } from "./label";
@@ -24,7 +25,7 @@ export interface FormFieldProps<T extends FieldValues> {
 export interface ReusableFormProps<T extends FieldValues> {
   fields: FormFieldProps<T>[];
   onSubmit: (data: T) => void | Promise<void>;
-  defaultValues?: Partial<T>;
+  defaultValues?: DefaultValues<T>;
   submitLabel?: string;
   isLoading?: boolean;
 }
@@ -90,7 +91,7 @@ export function ReusableForm<T extends FieldValues>({
   submitLabel = "Submit",
   isLoading = false,
 }: ReusableFormProps<T>) {
-  const methods = useForm<T>({ defaultValues: defaultValues as T });
+  const methods = useForm<T>({ defaultValues });
   const {
     handleSubmit,
     formState: { isSubmitting },
