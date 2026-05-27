@@ -65,6 +65,7 @@ const CreateProjectModal = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([]);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const toggleAssetSelection = (id: string) => {
     setSelectedAssetIds(
@@ -144,6 +145,8 @@ const CreateProjectModal = () => {
         if (res.success && res.projectId) {
           setOpen(false);
           router.push(`/editor/${res.projectId}`);
+        } else if (!res.success) {
+          setCreateError(String(res.error ?? "Failed to create project."));
         }
       },
       onError: (res) => {
@@ -169,7 +172,7 @@ const CreateProjectModal = () => {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) setCreateError(null); }}>
       <DialogTrigger asChild>
         <Button size="lg" className="gap-2 shadow-sm">
           <Plus className="h-4 w-4" /> Create New Project
@@ -413,7 +416,11 @@ const CreateProjectModal = () => {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-border/40 bg-muted/10 flex justify-end">
+        <div className="px-6 py-4 border-t border-border/40 bg-muted/10 space-y-3">
+          {createError && (
+            <p className="text-sm text-destructive text-center">{createError}</p>
+          )}
+          <div className="flex justify-end">
           <Button
             className="w-full sm:w-64 h-11 text-sm font-semibold shadow-sm transition-all"
             disabled={selectedAssetIds.length == 0 || loadingProjects}
@@ -421,6 +428,7 @@ const CreateProjectModal = () => {
           >
             Start Assembling Project
           </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

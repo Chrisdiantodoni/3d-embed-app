@@ -57,7 +57,7 @@ export default function LandingPage() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Free tier • 5 projects • No credit card required
+                Free tier • 3 projects • No credit card required
               </p>
             </div>
 
@@ -304,7 +304,7 @@ export default function LandingPage() {
               },
               {
                 q: "Is it really free?",
-                a: "Yes — 5 projects, no credit card required. We're in beta. Paid plans are coming, but early adopters will get grandfathered benefits.",
+                a: "Yes — 3 projects, no credit card required. We're in beta. Paid plans are coming, but early adopters will get grandfathered benefits.",
               },
               {
                 q: "Will embeds slow down my website?",

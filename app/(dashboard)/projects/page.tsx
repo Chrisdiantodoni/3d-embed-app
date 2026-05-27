@@ -90,7 +90,13 @@ export default function Page() {
           >
             {projects.length} / {MAX_PROJECTS_FREE}
           </Badge>
-          <CreateProjectModal />
+          {isAtLimit ? (
+            <Button disabled variant="outline" size="sm">
+              Limit reached — upgrade soon
+            </Button>
+          ) : (
+            <CreateProjectModal />
+          )}
         </div>
       </div>
       <Separator />

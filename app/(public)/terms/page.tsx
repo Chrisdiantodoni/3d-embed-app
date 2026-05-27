@@ -41,7 +41,7 @@ export default function TermsPage() {
           <p>
             Vur3D provides a platform to upload .glb 3D models and generate
             embeddable iframe viewers. The service is currently in beta and
-            offered free of charge for up to 5 projects.
+            offered free of charge for up to 3 projects.
           </p>
         </section>
 

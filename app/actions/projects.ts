@@ -7,6 +7,8 @@ import { projectAssets, projects } from "@/src/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { v4 as uuidv4 } from "uuid";
+import { eq, count } from "drizzle-orm";
+import { MAX_PROJECTS_FREE } from "@/lib/constants";
 
 export async function createProjectAction(data: ProjectPayload) {
   const { userId } = await auth();
@@ -16,7 +18,18 @@ export async function createProjectAction(data: ProjectPayload) {
   }
 
   try {
-    // Jalankan transaksi di Turso
+    const [projectCount] = await db
+      .select({ value: count() })
+      .from(projects)
+      .where(eq(projects.userId, userId));
+
+    if ((projectCount?.value ?? 0) >= MAX_PROJECTS_FREE) {
+      return {
+        success: false,
+        error: `Free tier limit reached (${MAX_PROJECTS_FREE} projects). Upgrade coming soon.`,
+      };
+    }
+
     const result = await db.transaction(async (tx) => {
       const projectId = crypto.randomUUID();
 
