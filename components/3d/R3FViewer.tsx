@@ -39,7 +39,7 @@ type R3FViewerProps = {
 
 // Internal model renderer with raycasting for hotspot placement
 function Model({ url, placingHotspot, onPlaceHotspot }: ModelProps) {
-  const { scene } = useGLTF(url);
+  const { scene } = useGLTF(url, "/draco/");
   const meshRef = useRef<THREE.Group>(null);
 
   const handleClick = useCallback(

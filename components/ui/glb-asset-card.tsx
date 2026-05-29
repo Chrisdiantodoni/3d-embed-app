@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Box,
   MoreVertical,
@@ -19,16 +20,25 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { formatBytes } from "@/lib/utils";
 
 interface GLBAsset {
   id: string;
   name: string;
   url: string;
   thumbnailUrl?: string;
-  fileSize?: string;
+  fileSize?: number;
   createdAt: string;
 }
 
@@ -38,12 +48,20 @@ interface GLBAssetCardProps {
   onPreview?: (asset: GLBAsset) => void;
 }
 
+function copyToClipboard(value: string, label: string) {
+  navigator.clipboard.writeText(value).then(
+    () => toast.success(`${label} copied to clipboard`),
+    () => toast.error("Clipboard access denied"),
+  );
+}
+
 export function GLBAssetCard({
   asset,
   view = "grid",
   onPreview,
 }: GLBAssetCardProps) {
   const queryClient = useQueryClient();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const { mutate: deleteAsset, isPending: isDeleting } = useMutation({
     mutationFn: async () => {
@@ -53,20 +71,20 @@ export function GLBAssetCard({
     onSuccess: () => {
       toast.success("Asset deleted");
       queryClient.invalidateQueries({ queryKey: ["getAssetLists"] });
+      setDeleteOpen(false);
     },
     onError: () => toast.error("Failed to delete asset"),
   });
 
   const handleCopyUrl = (e: React.MouseEvent) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(asset.url);
-    toast.success("URL copied to clipboard");
+    copyToClipboard(asset.url, "URL");
   };
 
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
     const a = document.createElement("a");
-    a.href = `/api/proxy?url=${encodeURIComponent(asset.url)}`;
+    a.href = asset.url;
     a.download = `${asset.name}.glb`;
     a.click();
   };
@@ -83,48 +101,71 @@ export function GLBAssetCard({
   });
 
   const dropdown = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <MoreVertical className="size-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={handlePreview}>
-          <Eye className="size-3.5 mr-2" /> Preview
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleDownload}>
-          <Download className="size-3.5 mr-2" /> Download
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleCopyUrl}>
-          <Copy className="size-3.5 mr-2" /> Copy URL
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          className="text-destructive focus:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation();
-            deleteAsset();
-          }}
-          disabled={isDeleting}
-        >
-          <Trash2 className="size-3.5 mr-2" />
-          {isDeleting ? "Deleting..." : "Delete"}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <MoreVertical className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={handlePreview}>
+            <Eye className="size-3.5 mr-2" /> Preview
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleDownload}>
+            <Download className="size-3.5 mr-2" /> Download
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={handleCopyUrl}>
+            <Copy className="size-3.5 mr-2" /> Copy URL
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleteOpen(true);
+            }}
+          >
+            <Trash2 className="size-3.5 mr-2" />
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete asset?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete &quot;{asset.name}&quot;. This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteAsset()}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 
-  // ── List View ──────────────────────────────────────────────────────────────
   if (view === "list") {
     return (
       <Card className="flex flex-row items-center gap-3 p-3 hover:bg-muted/40 transition-colors group">
-        {/* Thumbnail */}
         <div className="size-12 rounded-lg bg-slate-900 flex items-center justify-center shrink-0 overflow-hidden">
           {asset.thumbnailUrl ? (
             <img
@@ -137,16 +178,15 @@ export function GLBAssetCard({
           )}
         </div>
 
-        {/* Name + meta */}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{asset.name}</p>
           <div className="flex items-center gap-2 mt-0.5">
             <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
               GLB
             </Badge>
-            {asset.fileSize && (
+            {asset.fileSize != null && (
               <span className="text-xs text-muted-foreground">
-                {asset.fileSize}
+                {formatBytes(asset.fileSize)}
               </span>
             )}
             <span className="text-xs text-muted-foreground">
@@ -155,7 +195,6 @@ export function GLBAssetCard({
           </div>
         </div>
 
-        {/* Action buttons — visible on hover */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
           <Button
             size="icon"
@@ -191,7 +230,6 @@ export function GLBAssetCard({
     );
   }
 
-  // ── Grid View ──────────────────────────────────────────────────────────────
   return (
     <Card className="group overflow-hidden p-0 gap-0">
       <div className="aspect-square bg-slate-900 flex items-center justify-center relative">
@@ -214,7 +252,6 @@ export function GLBAssetCard({
           </div>
         )}
 
-        {/* Hover overlay */}
         <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
           <Button
             size="sm"
@@ -235,12 +272,14 @@ export function GLBAssetCard({
         </div>
       </div>
 
-      {/* Footer */}
       <div className="px-3 py-2.5 flex justify-between items-center gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium truncate">{asset.name}</p>
           <p className="text-[11px] text-muted-foreground mt-0.5">
             {formattedDate}
+            {asset.fileSize != null && (
+              <> · {formatBytes(asset.fileSize)}</>
+            )}
           </p>
         </div>
         {dropdown}

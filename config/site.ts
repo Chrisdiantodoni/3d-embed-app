@@ -1,5 +1,5 @@
 export const siteConfig = {
-  name: "Project-X", // Nanti tinggal ganti jadi "Vur" atau "Sway"
+  name: "Vur3D",
   description: "Easiest way to embed 3D models in your website",
-  url: "https://project-x.app",
+  url: "https://vur3d.app",
 };

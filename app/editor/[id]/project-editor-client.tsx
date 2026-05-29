@@ -16,6 +16,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  Component,
 } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Button } from "@/components/ui/button";
@@ -61,9 +62,12 @@ import {
   Square,
   Clock,
   Copy,
+  ArrowLeft,
 } from "lucide-react";
 import * as THREE from "three";
+import Link from "next/link";
 import { useDebounce } from "@/hooks/use-debounce";
+import { CreateAssetDialog } from "@/components/ui/model-create-assets";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,6 +90,7 @@ type LightingSettings = {
   intensity: number;
   ambientColor: string;
   shadowEnabled: boolean;
+  background: "environment" | "none";
 };
 type LibraryAsset = {
   id: string;
@@ -129,6 +134,45 @@ const AUTOSAVE_INTERVAL = 30_000;
 const DEFAULT_CAM_POSITION: [number, number, number] = [5, 5, 5];
 const DEFAULT_CAM_TARGET: [number, number, number] = [0, 0, 0];
 
+class CanvasErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error) {
+    console.error("Canvas error:", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-zinc-950 text-white gap-4">
+          <Box className="w-10 h-10 text-zinc-600" />
+          <p className="text-sm text-zinc-400">
+            Something went wrong with the 3D viewer.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => this.setState({ hasError: false })}
+          >
+            Reload viewer
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const ENVIRONMENT_PRESETS = [
   "studio",
   "sunset",
@@ -165,21 +209,31 @@ function toProxyUrl(url: string) {
     url.startsWith("data:")
   )
     return url;
-  return `/api/proxy?url=${encodeURIComponent(url)}`;
+  return url;
 }
 
 // ─── useUndoHistory ───────────────────────────────────────────────────────────
 
 function useUndoHistory(initialState: SceneAsset[]) {
   const [assets, setAssets] = useState<SceneAsset[]>(initialState);
-  const historyRef = useRef<HistorySnapshot[]>([]);
+  const undoStackRef = useRef<HistorySnapshot[]>([]);
+  const redoStackRef = useRef<HistorySnapshot[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const updateFlags = useCallback((undoLen: number, redoLen: number) => {
+    setCanUndo(undoLen > 0);
+    setCanRedo(redoLen > 0);
+  }, []);
 
   const pushHistory = useCallback((current: SceneAsset[]) => {
-    historyRef.current = [
-      ...historyRef.current.slice(-MAX_HISTORY),
+    undoStackRef.current = [
+      ...undoStackRef.current.slice(-MAX_HISTORY),
       JSON.parse(JSON.stringify(current)),
     ];
-  }, []);
+    redoStackRef.current = [];
+    updateFlags(undoStackRef.current.length, 0);
+  }, [updateFlags]);
 
   const commit = useCallback(
     (updater: (prev: SceneAsset[]) => SceneAsset[]) => {
@@ -192,11 +246,26 @@ function useUndoHistory(initialState: SceneAsset[]) {
   );
 
   const undo = useCallback(() => {
-    if (historyRef.current.length === 0) return;
-    setAssets(historyRef.current.pop()!);
-  }, []);
+    if (undoStackRef.current.length === 0) return;
+    setAssets((current) => {
+      redoStackRef.current.push(JSON.parse(JSON.stringify(current)));
+      const restored = undoStackRef.current.pop()!;
+      updateFlags(undoStackRef.current.length, redoStackRef.current.length);
+      return restored;
+    });
+  }, [updateFlags]);
 
-  return { assets, commit, undo, canUndo: historyRef.current.length > 0 };
+  const redo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    setAssets((current) => {
+      undoStackRef.current.push(JSON.parse(JSON.stringify(current)));
+      const restored = redoStackRef.current.pop()!;
+      updateFlags(undoStackRef.current.length, redoStackRef.current.length);
+      return restored;
+    });
+  }, [updateFlags]);
+
+  return { assets, commit, undo, redo, canUndo, canRedo };
 }
 
 // ─── Camera Controller ────────────────────────────────────────────────────────
@@ -336,8 +405,9 @@ function EditableAsset({
   snapEnabled: boolean;
   axisLock: AxisLock;
 }) {
-  const { scene } = useGLTF(asset.url || "/fallback.glb");
+  const { scene } = useGLTF(asset.url, "/draco/");
   const meshRef = useRef<THREE.Group>(null);
+  const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
   const [meshReady, setMeshReady] = useState(false);
   const clonedScene = useMemo(() => scene.clone(), [scene]);
 
@@ -393,9 +463,19 @@ function EditableAsset({
         position={vec3ToArray(asset.transform.position)}
         rotation={vec3ToArray(asset.transform.rotation)}
         scale={vec3ToArray(asset.transform.scale)}
-        onClick={(e: any) => {
+        onPointerDown={(e: any) => {
           e.stopPropagation();
-          if (asset.visible) onSelect(asset.id);
+          pointerDownRef.current = { x: e.clientX, y: e.clientY };
+        }}
+        onPointerUp={(e: any) => {
+          e.stopPropagation();
+          if (!pointerDownRef.current) return;
+          const dx = Math.abs(e.clientX - pointerDownRef.current.x);
+          const dy = Math.abs(e.clientY - pointerDownRef.current.y);
+          if (dx < 3 && dy < 3 && asset.visible) {
+            onSelect(asset.id);
+          }
+          pointerDownRef.current = null;
         }}
       />
       {asset.autoRotate && !isSelected && (
@@ -691,6 +771,24 @@ function LightingPanel({
             }
             className="w-8 h-8 rounded cursor-pointer bg-transparent border border-zinc-700"
           />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Label className="text-sm text-white/50">Background</Label>
+        <div className="flex gap-1">
+          <button
+            onClick={() => onChange({ ...lighting, background: "environment" })}
+            className={`px-2.5 py-1 rounded text-sm transition-colors ${lighting.background === "environment" ? "bg-primary text-primary-foreground" : "bg-zinc-800 text-white/50 hover:bg-zinc-700"}`}
+          >
+            Scene
+          </button>
+          <button
+            onClick={() => onChange({ ...lighting, background: "none" })}
+            className={`px-2.5 py-1 rounded text-sm transition-colors ${lighting.background === "none" ? "bg-primary text-primary-foreground" : "bg-zinc-800 text-white/50 hover:bg-zinc-700"}`}
+          >
+            None
+          </button>
         </div>
       </div>
 
@@ -1086,7 +1184,12 @@ function AssetLibraryPanel({
   const [panelHeight, setPanelHeight] = useState(220);
   const dragRef = useRef<{ startY: number; startH: number } | null>(null);
   const [page, setPage] = useState(1);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const requestedPage = search === debouncedSearch ? page : 1;
+
+  const refetchAssets = useCallback(() => {
+    setPage(1);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1136,6 +1239,7 @@ function AssetLibraryPanel({
   };
 
   return (
+    <>
     <div
       className="w-full bg-zinc-900/95 border-t border-white/10 flex flex-col backdrop-blur-md"
       style={{ height: isOpen ? panelHeight : 42 }}
@@ -1157,6 +1261,12 @@ function AssetLibraryPanel({
           </span>
         )}
         <div className="flex-1" />
+        <button
+          onClick={() => setUploadOpen(true)}
+          className="text-xs text-violet-400 hover:text-violet-300 transition-colors font-medium"
+        >
+          + Upload
+        </button>
         <button
           onClick={() => setIsOpen((v) => !v)}
           className="text-white/30 hover:text-white/70"
@@ -1258,6 +1368,8 @@ function AssetLibraryPanel({
         </div>
       )}
     </div>
+    <CreateAssetDialog open={uploadOpen} onOpenChange={setUploadOpen} />
+    </>
   );
 }
 
@@ -1323,7 +1435,9 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     assets: sceneAssets,
     commit,
     undo,
+    redo,
     canUndo,
+    canRedo,
   } = useUndoHistory(
     data.sceneAssets.map((a: any) => ({
       ...a,
@@ -1347,6 +1461,14 @@ export default function ProjectEditorClient({ data }: { data: any }) {
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const hasInitializedRef = useRef(false);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [projectName, setProjectName] = useState(data.name);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [saveLabel, setSaveLabel] = useState<string | null>(null);
   const [focusTargetId, setFocusTargetId] = useState<string | null>(null);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [copiedTarget, setCopiedTarget] = useState<"url" | "iframe" | null>(
@@ -1367,25 +1489,35 @@ export default function ProjectEditorClient({ data }: { data: any }) {
   // Camera
   const orbitRef = useRef<any>(null);
   const [isOrthographic, setIsOrthographic] = useState(false);
-  const [globalAutoRotate, setGlobalAutoRotate] = useState(false);
-  const [globalAutoRotateSpeed, setGlobalAutoRotateSpeed] = useState(1);
+  const [globalAutoRotate, setGlobalAutoRotate] = useState(
+    data.settings.camera?.autoRotate ?? false,
+  );
+  const [globalAutoRotateSpeed, setGlobalAutoRotateSpeed] = useState(
+    data.settings.camera?.autoRotateSpeed ?? 1,
+  );
   const [bookmarks, setBookmarks] = useState<CameraBookmark[]>([]);
   const cameraPositionRef =
     useRef<[number, number, number]>(DEFAULT_CAM_POSITION);
   const cameraTargetRef = useRef<[number, number, number]>(DEFAULT_CAM_TARGET);
   const thumbnailTriggerRef = useRef<(() => void) | null>(null);
+  const thumbnailDataUrlRef = useRef<string | null>(null);
 
   const [lighting, setLighting] = useState<LightingSettings>({
     preset: data.settings.lighting.type || "studio",
     intensity: data.settings.lighting.intensity ?? 1,
     ambientColor: data.settings.lighting.color || "#ffffff",
     shadowEnabled: data.settings.lighting.shadowEnabled ?? true,
+    background: data.settings.lighting.background || "environment",
   });
 
   const selectedAsset = sceneAssets.find((a) => a.id === selectedId) ?? null;
 
   // Mark unsaved
   useEffect(() => {
+    if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true;
+      return;
+    }
     setHasUnsavedChanges(true);
   }, [sceneAssets, lighting]);
 
@@ -1468,25 +1600,59 @@ export default function ProjectEditorClient({ data }: { data: any }) {
     void loadEmbedAccess();
   }, [isExportOpen, loadEmbedDomains, loadEmbedAccess]);
 
+  const saveProjectName = useCallback(async () => {
+    if (!projectName.trim() || projectName === data.name) {
+      setProjectName(data.name);
+      setIsEditingName(false);
+      return;
+    }
+    try {
+      await fetch(`/api/projects/${data.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: projectName.trim() }),
+      });
+      data.name = projectName.trim();
+    } catch (err) {
+      console.error("Failed to rename project:", err);
+      setProjectName(data.name);
+    } finally {
+      setIsEditingName(false);
+    }
+  }, [projectName, data]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
         e.preventDefault();
         undo();
       }
-      if ((e.key === "f" || e.key === "F") && selectedId)
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key === "y" || (e.key === "z" && e.shiftKey))
+      ) {
+        e.preventDefault();
+        redo();
+      }
+      if (
+        (e.key === "f" || e.key === "F") &&
+        selectedId &&
+        document.activeElement?.tagName === "BODY"
+      )
         setFocusTargetId(selectedId);
+      if (e.key === "Escape" && document.activeElement?.tagName === "BODY") {
+        setSelectedId(null);
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, selectedId]);
+  }, [undo, redo, selectedId]);
 
-  const doSave = useCallback(async () => {
+  const doSave = useCallback(async (isAuto = false) => {
     setIsSaving(true);
     try {
       if (thumbnailTriggerRef.current) thumbnailTriggerRef.current();
-      console.log("DEBUG: Saving project", data.id);
       await fetch(`/api/projects/${data.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1496,26 +1662,51 @@ export default function ProjectEditorClient({ data }: { data: any }) {
           cameraSettings: {
             position: cameraPositionRef.current,
             target: cameraTargetRef.current,
+            autoRotate: globalAutoRotate,
+            autoRotateSpeed: globalAutoRotateSpeed,
           },
+          thumbnail: thumbnailDataUrlRef.current,
         }),
       });
       setLastSaved(new Date());
       setHasUnsavedChanges(false);
+      setSaveLabel(isAuto ? "Auto-saved" : "Saved");
+      setSaveError(null);
+      setTimeout(() => setSaveLabel(null), 3000);
     } catch (err) {
       console.error("Failed to save:", err);
+      setSaveError("Save failed — check your connection and try again.");
     } finally {
       setIsSaving(false);
     }
   }, [sceneAssets, lighting, data.id]);
-  console.log({ data });
+
+  const handleDeleteProject = useCallback(async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/projects/${data.id}`, { method: "DELETE" });
+      if (res.ok) {
+        window.location.href = "/projects";
+      }
+    } catch (err) {
+      console.error("Failed to delete project:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [data.id]);
+
+  const doSaveRef = useRef(doSave);
+  doSaveRef.current = doSave;
+  const hasUnsavedRef = useRef(hasUnsavedChanges);
+  hasUnsavedRef.current = hasUnsavedChanges;
 
   // Auto-save 30s
   useEffect(() => {
     const interval = setInterval(() => {
-      if (hasUnsavedChanges) doSave();
+      if (hasUnsavedRef.current) doSaveRef.current(true);
     }, AUTOSAVE_INTERVAL);
     return () => clearInterval(interval);
-  }, [hasUnsavedChanges, doSave]);
+  }, []);
 
   const handleTransformChange = useCallback(
     (id: string, transform: TransformData) => {
@@ -1842,8 +2033,49 @@ export default function ProjectEditorClient({ data }: { data: any }) {
 
         {/* CANVAS */}
         <div className="flex-1 relative">
-          {/* TOOLBAR — bersih */}
-          <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-zinc-900/80 p-2 rounded-xl border border-white/10 backdrop-blur-md">
+          {/* Top bar — back + project name */}
+          <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-zinc-950/90 to-transparent pointer-events-none">
+            <Link
+              href="/projects"
+              className="pointer-events-auto text-xs text-zinc-400 hover:text-white transition-colors inline-flex items-center gap-1.5"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Back to Projects
+            </Link>
+            {isEditingName ? (
+              <input
+                ref={nameInputRef}
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                onBlur={saveProjectName}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveProjectName();
+                  if (e.key === "Escape") {
+                    setProjectName(data.name);
+                    setIsEditingName(false);
+                  }
+                }}
+                className="text-sm font-medium text-white bg-white/10 rounded px-2 py-0.5 w-[200px] outline-none border border-white/20 focus:border-white/40"
+                autoFocus
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditingName(true);
+                  setTimeout(() => nameInputRef.current?.focus(), 0);
+                }}
+                className="text-sm font-medium text-white/70 truncate max-w-[200px] hover:text-white transition-colors cursor-pointer pointer-events-auto"
+                title="Click to rename"
+              >
+                {data.name}
+              </button>
+            )}
+            <div className="w-20" />
+          </div>
+
+          {/* TOOLBAR */}
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-zinc-900/80 p-2 rounded-xl border border-white/10 backdrop-blur-md">
             {(["translate", "rotate", "scale"] as const).map((m) => (
               <Button
                 key={m}
@@ -1867,6 +2099,15 @@ export default function ProjectEditorClient({ data }: { data: any }) {
             >
               <Undo2 className="h-4 w-4" />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={redo}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Shift+Z)"
+            >
+              <Undo2 className="h-4 w-4 rotate-180 scale-x-[-1]" />
+            </Button>
             <div className="w-[1px] bg-white/10 h-6 mx-1" />
             <div className="flex items-center gap-2">
               <Button
@@ -1883,25 +2124,77 @@ export default function ProjectEditorClient({ data }: { data: any }) {
                   Unsaved
                 </span>
               )}
-              {lastSaved && !hasUnsavedChanges && (
-                <span className="flex items-center gap-1 text-xs text-white/30">
+              {saveLabel && (
+                <span className="flex items-center gap-1 text-xs text-emerald-400/80">
                   <Clock className="h-3 w-3" />
-                  {lastSaved.toLocaleTimeString([], {
-                    hour: "2-digit",
+                  {saveLabel}
+                </span>
+              )}
+              {lastSaved && !hasUnsavedChanges && !saveLabel && (
+                <span className="flex items-center gap-1 text-xs text-white/30 whitespace-nowrap">
+                  <Clock className="h-3 w-3" />
+                  {lastSaved.toLocaleTimeString("en-US", {
+                    hour: "numeric",
                     minute: "2-digit",
+                    hour12: true,
                   })}
                 </span>
               )}
-              <Button onClick={doSave} disabled={isSaving} className="gap-2">
+              {saveError && (
+                <span className="text-xs text-red-400/80">{saveError}</span>
+              )}
+              <Button onClick={() => doSave()} disabled={isSaving} className="gap-2">
                 <Save className="h-4 w-4" />
                 {isSaving ? "Saving..." : "Save"}
               </Button>
+              <div className="w-[1px] bg-white/10 h-6 mx-1" />
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsDeleteOpen(true)}
+                title="Delete project"
+                className="text-white/30 hover:text-red-400"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+              <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Delete project?</DialogTitle>
+                    <DialogDescription>
+                      This will permanently delete &quot;{data.name}&quot; and all
+                      of its assets, embed links, and analytics data. This action
+                      cannot be undone.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsDeleteOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeleteProject}
+                      disabled={isDeleting}
+                    >
+                      {isDeleting ? "Deleting..." : "Delete project"}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
 
+          <CanvasErrorBoundary>
           <Canvas
+            key={isOrthographic ? "ortho" : "persp"}
+            orthographic={isOrthographic}
             shadows={lighting.shadowEnabled}
-            camera={{ position: DEFAULT_CAM_POSITION, fov: 50 }}
+            camera={isOrthographic
+              ? { position: [0, 0, 10], zoom: 50, near: 0.1, far: 1000 }
+              : { position: DEFAULT_CAM_POSITION, fov: 50 }}
             onPointerMissed={() => setSelectedId(null)}
             className="h-full w-full"
             gl={{ preserveDrawingBuffer: true }}
@@ -1932,7 +2225,7 @@ export default function ProjectEditorClient({ data }: { data: any }) {
                 />
               )}
               <group>
-                {sceneAssets.map((asset) => (
+                {sceneAssets.filter((a) => a.url).map((asset) => (
                   <EditableAsset
                     key={asset.id}
                     asset={asset}
@@ -1971,17 +2264,18 @@ export default function ProjectEditorClient({ data }: { data: any }) {
               />
               <ThumbnailCapturer
                 triggerRef={thumbnailTriggerRef}
-                onCapture={(dataUrl) =>
-                  console.log("Thumbnail:", dataUrl.slice(0, 50))
-                }
+                onCapture={(dataUrl) => {
+                  thumbnailDataUrlRef.current = dataUrl;
+                }}
               />
             </Suspense>
           </Canvas>
+          </CanvasErrorBoundary>
 
           <div className="absolute bottom-6 left-6 text-white/40 text-sm space-y-0.5">
             <p>Click object to select · Drag gizmo to transform · F to focus</p>
             <p className="text-white/25">
-              Ctrl+Z to undo · Auto-save every 30s
+              Ctrl+Z undo · Ctrl+Shift+Z redo · F to focus · Auto-save every 30s
             </p>
           </div>
         </div>
@@ -2008,7 +2302,7 @@ export default function ProjectEditorClient({ data }: { data: any }) {
           onToggleOrtho={() => setIsOrthographic((v) => !v)}
           onResetCamera={handleResetCamera}
           onFocus={() => selectedId && setFocusTargetId(selectedId)}
-          onToggleAutoRotate={() => setGlobalAutoRotate((v) => !v)}
+          onToggleAutoRotate={() => setGlobalAutoRotate((v: boolean) => !v)}
           onAutoRotateSpeed={setGlobalAutoRotateSpeed}
           onSaveBookmark={handleSaveBookmark}
           onLoadBookmark={handleLoadBookmark}

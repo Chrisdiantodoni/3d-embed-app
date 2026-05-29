@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+
+export const maxBodySize = "50mb";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ClerkProvider } from "@clerk/nextjs";

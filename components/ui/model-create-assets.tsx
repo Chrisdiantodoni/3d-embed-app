@@ -41,7 +41,7 @@ function FileDropZone({
     const selected = e.target.files?.[0];
     if (!selected) return;
     if (!selected.name.endsWith(".glb")) {
-      toast.error("Hanya file .glb yang diperbolehkan!");
+      toast.error("Only .glb files are allowed!");
       return;
     }
     onFileChange(selected);
@@ -97,6 +97,9 @@ function FileDropZone({
           <p className="text-xs text-muted-foreground">
             Supported: GLB (Max 50MB)
           </p>
+          <p className="text-[10px] text-muted-foreground/60 mt-1">
+            Tip: Export with Draco compression in Blender for faster loading.
+          </p>
         </>
       )}
     </div>
@@ -145,14 +148,14 @@ export function CreateAssetDialog({
       const result = await createAssetAction(formData);
 
       if (result.success) {
-        toast.success("Berhasil simpan ke R2 dan Turso!");
+        toast.success("Asset uploaded successfully!");
         queryClient.invalidateQueries({ queryKey: ["getAssetLists"] });
         handleClose();
       } else {
         toast.error(result.error);
       }
     } catch {
-      toast.error("Terjadi kesalahan fatal");
+      toast.error("A fatal error occurred");
     } finally {
       setIsUploading(false);
     }
@@ -164,8 +167,7 @@ export function CreateAssetDialog({
         <DialogHeader>
           <DialogTitle>Upload 3D Asset</DialogTitle>
           <DialogDescription>
-            Tarik dan lepas file .glb kamu di bawah ini untuk ditambahkan ke
-            library.
+            Drag and drop your .glb file to add it to the library.
           </DialogDescription>
         </DialogHeader>
 

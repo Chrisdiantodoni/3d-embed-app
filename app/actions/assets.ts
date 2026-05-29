@@ -8,6 +8,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 import { v4 as uuidv4 } from "uuid";
+import { compressGlbWithDraco } from "@/lib/compress-glb";
 
 const s3 = new S3Client({
   region: "auto",
@@ -22,7 +23,7 @@ export async function createAssetAction(formData: FormData) {
   const { userId } = await auth();
 
   if (!userId) {
-    throw new Error("Unauthorized: Kamu harus login untuk upload aset.");
+    throw new Error("Unauthorized: You must be logged in to upload assets.");
   }
 
   const file = formData.get("file") as File | null;
@@ -30,11 +31,11 @@ export async function createAssetAction(formData: FormData) {
   const providedName = formData.get("name") as string | null; // <-- Tangkap nama dari frontend
 
   if (!file) {
-    return { error: "File aset wajib diisi" };
+    return { error: "File asset is required" };
   }
 
   if (!file.name.toLowerCase().endsWith(".glb")) {
-    return { error: "Hanya format .glb yang diizinkan" };
+    return { error: "Only .glb format is allowed" };
   }
 
   try {
@@ -67,7 +68,10 @@ export async function createAssetAction(formData: FormData) {
 
     // --- PROSES UPLOAD ---
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    let buffer = Buffer.from(arrayBuffer);
+
+    // Compress with Draco before uploading
+    buffer = Buffer.from(await compressGlbWithDraco(buffer));
 
     let thumbnailUrl = null;
     if (thumbFile) {
@@ -96,18 +100,18 @@ export async function createAssetAction(formData: FormData) {
 
     await db.insert(assets).values({
       id: uuidv4(),
-      name: finalName, // <-- finalName yang sudah disesuaikan
+      name: finalName,
       url: publicUrl,
-      fileSize: file.size,
+      fileSize: buffer.length,
       userId: userId,
       thumbnailUrl: thumbnailUrl,
     });
 
-    revalidatePath("/dashboard/assets");
+    revalidatePath("/assets-library");
 
     return { success: true, url: publicUrl, name: finalName };
   } catch (error) {
     console.error("Upload Error:", error);
-    return { error: "Terjadi kesalahan saat upload ke server" };
+    return { error: "An error occurred while uploading to the server" };
   }
 }

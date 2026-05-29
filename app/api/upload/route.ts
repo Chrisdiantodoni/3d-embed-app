@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
             userId,
             name: name.trim(),
             description: file.name,
-            thumbnailUrl: fileUrl,
+            thumbnailUrl: null,
             lightingSettings: "{}",
             cameraSettings: "{}",
         });

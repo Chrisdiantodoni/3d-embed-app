@@ -360,7 +360,7 @@ export default function LandingPage() {
                 Ship interactive 3D today
               </h2>
               <p className="text-zinc-400 text-lg max-w-md mx-auto">
-                Free tier — 5 projects. No credit card required. Set up your
+                Free tier — 3 projects. No credit card required. Set up your
                 first embed in under a minute.
               </p>
 

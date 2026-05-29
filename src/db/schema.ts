@@ -75,7 +75,7 @@ export const projectAssets = sqliteTable(
       .references(() => projects.id, { onDelete: "cascade" }),
     assetId: text("asset_id")
       .notNull()
-      .references(() => assets.id),
+      .references(() => assets.id, { onDelete: "cascade" }),
 
     // Transformasi Spesifik per Instance Asset
     // Contoh: { x: 2, y: 0, z: -5 }

@@ -39,8 +39,6 @@ class ModelErrorBoundary extends Component<
   }
 }
 function toProxyUrl(url: string) {
-  // Jika URL kosong, atau merupakan Blob lokal, atau file di folder public/
-  // Langsung kembalikan URL aslinya tanpa proxy.
   if (
     !url ||
     url.startsWith("blob:") ||
@@ -50,12 +48,11 @@ function toProxyUrl(url: string) {
     return url;
   }
 
-  // Hanya gunakan proxy untuk URL eksternal (seperti R2 atau domain lain)
-  return `/api/proxy?url=${encodeURIComponent(url)}`;
+  return url;
 }
 function Model({ url, onReady }: { url: string; onReady?: () => void }) {
   // useGLTF akan melempar error ke Error Boundary jika fetch gagal
-  const { scene } = useGLTF(toProxyUrl(url));
+  const { scene } = useGLTF(toProxyUrl(url), "/draco/");
   const bounds = useBounds();
 
   useEffect(() => {

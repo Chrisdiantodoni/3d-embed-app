@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Card,
@@ -13,34 +13,34 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   FolderOpen,
   Box,
   ExternalLink,
   Calendar,
-  HardDrive,
   FolderKanban,
+  Trash2,
 } from "lucide-react";
 import { MAX_PROJECTS_FREE } from "@/lib/constants";
 import CreateProjectModal from "@/components/ui/modal/create-project-modal";
 import { Separator } from "@/components/ui/separator";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 type Project = {
   id: string;
   name: string;
-  fileName: string;
-  fileUrl: string;
-  fileSize: number | null;
+  description: string | null;
   thumbnailUrl: string | null;
   createdAt: string;
-  updatedAt: string;
 };
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -52,18 +52,30 @@ function formatDate(iso: string): string {
 
 export default function Page() {
   const router = useRouter();
-  const [projects, setProjects] = useState<Project[]>([]);
+  const queryClient = useQueryClient();
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
 
-  const { isLoading: loading } = useQuery({
+  const { data: projects = [], isLoading: loading } = useQuery({
     queryKey: ["getProjects"],
     queryFn: async () => {
       const res = await fetch("/api/projects");
-      if (res.ok) {
-        const data = await res.json();
-        setProjects(data);
-      }
-      return res;
+      if (!res.ok) throw new Error("Failed to fetch projects");
+      return res.json() as Promise<Project[]>;
     },
+    staleTime: 0,
+  });
+
+  const { mutate: deleteProject, isPending: isDeleting } = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+    },
+    onSuccess: () => {
+      toast.success("Project deleted");
+      queryClient.invalidateQueries({ queryKey: ["getProjects"] });
+      setDeleteTarget(null);
+    },
+    onError: () => toast.error("Failed to delete project"),
   });
 
   const isAtLimit = projects.length >= MAX_PROJECTS_FREE;
@@ -101,29 +113,7 @@ export default function Page() {
       </div>
       <Separator />
 
-      {/* Header */}
-      {/* <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">My Projects</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Upload .glb models, customize the viewer, and embed them anywhere.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Badge
-            variant="secondary"
-            className={`font-mono text-xs ${
-              isAtLimit ? "text-destructive border-destructive/30" : ""
-            }`}
-          >
-            {projects.length} / {MAX_PROJECTS_FREE}
-          </Badge>
-          <CreateProjectModal />
-        </div>
-      </div> */}
-
-      {/* Loading Skeletons */}
-      {loading && (
+      {loading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {[...Array(3)].map((_, i) => (
             <Card key={i}>
@@ -141,10 +131,7 @@ export default function Page() {
             </Card>
           ))}
         </div>
-      )}
-
-      {/* Empty State */}
-      {!loading && projects.length === 0 && (
+      ) : projects.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16 gap-4">
             <div className="rounded-full bg-muted p-4">
@@ -157,14 +144,9 @@ export default function Page() {
               </p>
             </div>
             <CreateProjectModal />
-
-            {/* <UploadDialog onSuccess={fetchProjects} /> */}
           </CardContent>
         </Card>
-      )}
-
-      {/* Project Grid */}
-      {!loading && projects.length > 0 && (
+      ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map((project) => (
             <Card
@@ -180,25 +162,38 @@ export default function Page() {
                       {project.name}
                     </CardTitle>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      router.push(`/editor/${project.id}`);
-                    }}
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/editor/${project.id}`);
+                      }}
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteTarget(project);
+                      }}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
-                <CardDescription className="text-xs truncate">
-                  {project.fileName}
-                </CardDescription>
+                {project.description && (
+                  <CardDescription className="text-xs truncate">
+                    {project.description}
+                  </CardDescription>
+                )}
               </CardHeader>
 
               <CardContent>
-                {/* Thumbnail or Placeholder */}
                 {project.thumbnailUrl ? (
                   <div className="rounded-lg h-32 overflow-hidden mb-3">
                     <img
@@ -213,24 +208,42 @@ export default function Page() {
                   </div>
                 )}
 
-                {/* Meta Info */}
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <div className="flex items-center gap-1">
                     <Calendar className="w-3 h-3" />
                     {formatDate(project.createdAt)}
                   </div>
-                  {project.fileSize && (
-                    <div className="flex items-center gap-1">
-                      <HardDrive className="w-3 h-3" />
-                      {formatFileSize(project.fileSize)}
-                    </div>
-                  )}
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
+
+      <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete project?</DialogTitle>
+            <DialogDescription>
+              This will permanently delete &quot;{deleteTarget?.name}&quot; and
+              all of its assets, embed links, and analytics data. This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteTarget && deleteProject(deleteTarget.id)}
+              disabled={isDeleting}
+            >
+              {isDeleting ? "Deleting..." : "Delete project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

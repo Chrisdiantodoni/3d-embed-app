@@ -149,8 +149,8 @@ const CreateProjectModal = () => {
           setCreateError(String(res.error ?? "Failed to create project."));
         }
       },
-      onError: (res) => {
-        console.log({ res });
+      onError: () => {
+        setCreateError("Failed to create project. Please try again.");
       },
     });
 

@@ -31,7 +31,8 @@ import { Separator } from "@/components/ui/separator";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { useDebounce } from "@/hooks/use-debounce"; // Pastikan path ini sesuai
+import { useDebounce } from "@/hooks/use-debounce";
+import { formatBytes } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ interface Asset {
   name: string;
   url: string;
   thumbnailUrl?: string;
-  fileSize?: string;
+  fileSize?: number;
   createdAt: string;
 }
 
@@ -125,20 +126,21 @@ function PreviewDialog({
   const handleDownload = () => {
     if (!asset) return;
     const a = document.createElement("a");
-    a.href = `/api/proxy?url=${encodeURIComponent(asset.url)}`;
+    a.href = asset.url;
     a.download = `${asset.name}.glb`;
     a.click();
   };
 
   const handleCopyUrl = () => {
     if (!asset) return;
-    navigator.clipboard.writeText(asset.url);
-    toast.success("URL copied to clipboard");
+    navigator.clipboard.writeText(asset.url).then(
+      () => toast.success("URL copied to clipboard"),
+      () => toast.error("Clipboard access denied"),
+    );
   };
 
   return (
     <Dialog open={!!asset} onOpenChange={onClose}>
-      {/* Kode Dialog Content kamu tetap sama... */}
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <div className="flex items-start justify-between pr-6">
@@ -148,9 +150,9 @@ function PreviewDialog({
                 <Badge variant="secondary" className="text-[10px]">
                   GLB
                 </Badge>
-                {asset?.fileSize && (
+                {asset?.fileSize != null && (
                   <span className="text-xs text-muted-foreground">
-                    {asset.fileSize}
+                    {formatBytes(asset.fileSize)}
                   </span>
                 )}
               </div>
@@ -166,7 +168,7 @@ function PreviewDialog({
             <Separator />
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
-                🖱 Drag to rotate · Scroll to zoom
+                Drag to rotate · Scroll to zoom
               </p>
               <div className="flex gap-2">
                 <Button

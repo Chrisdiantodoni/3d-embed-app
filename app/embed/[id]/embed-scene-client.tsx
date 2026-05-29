@@ -32,6 +32,8 @@ type EmbedSceneClientProps = {
       camera?: {
         position?: [number, number, number];
         target?: [number, number, number];
+        autoRotate?: boolean;
+        autoRotateSpeed?: number;
       };
     };
     sceneAssets: SceneAsset[];
@@ -72,7 +74,7 @@ function SceneModel({
   projectId: string;
   token: string;
 }) {
-  const { scene } = useGLTF(toProxyUrl(asset.url, projectId, token));
+  const { scene } = useGLTF(toProxyUrl(asset.url, projectId, token), "/draco/");
   const clonedScene = useMemo(() => scene.clone(), [scene]);
 
   return (
@@ -97,7 +99,12 @@ function SceneModel({
   );
 }
 
-function TrackedControls({ projectId, cameraTarget }: { projectId: string; cameraTarget: [number, number, number] }) {
+function TrackedControls({ projectId, cameraTarget, autoRotate, autoRotateSpeed }: {
+  projectId: string;
+  cameraTarget: [number, number, number];
+  autoRotate: boolean;
+  autoRotateSpeed: number;
+}) {
   const viewFired = useRef(false);
   const lastInteraction = useRef(0);
   const interactionToggle = useRef(0);
@@ -124,6 +131,8 @@ function TrackedControls({ projectId, cameraTarget }: { projectId: string; camer
       target={new THREE.Vector3(...cameraTarget)}
       enablePan
       enableZoom
+      autoRotate={autoRotate}
+      autoRotateSpeed={autoRotateSpeed}
       onEnd={handleInteractionEnd}
     />
   );
@@ -134,6 +143,9 @@ export default function EmbedSceneClient({ data }: EmbedSceneClientProps) {
   const camera = data.settings.camera ?? {};
   const cameraPosition = camera.position ?? [5, 5, 5];
   const cameraTarget = camera.target ?? [0, 0, 0];
+  const background = (lighting as any).background ?? "environment";
+  const autoRotate = camera.autoRotate ?? false;
+  const autoRotateSpeed = camera.autoRotateSpeed ?? 1;
   const environment = (lighting.type ?? "studio") as
     | "studio"
     | "sunset"
@@ -147,7 +159,7 @@ export default function EmbedSceneClient({ data }: EmbedSceneClientProps) {
     | "lobby";
 
   return (
-    <div className="h-screen w-screen bg-zinc-950">
+    <div className={`h-screen w-screen ${background === "none" ? "bg-transparent" : "bg-zinc-950"}`}>
       <Canvas
         shadows={lighting.shadowEnabled ?? true}
         camera={{ position: cameraPosition, fov: 50 }}
@@ -157,6 +169,7 @@ export default function EmbedSceneClient({ data }: EmbedSceneClientProps) {
           <Environment
             preset={environment}
             environmentIntensity={lighting.intensity ?? 1}
+            background={background === "environment"}
           />
           <ambientLight
             color={lighting.color ?? "#ffffff"}
@@ -183,7 +196,7 @@ export default function EmbedSceneClient({ data }: EmbedSceneClientProps) {
             />
           )}
 
-          <TrackedControls projectId={data.projectId} cameraTarget={cameraTarget} />
+          <TrackedControls projectId={data.projectId} cameraTarget={cameraTarget} autoRotate={autoRotate} autoRotateSpeed={autoRotateSpeed} />
         </Suspense>
       </Canvas>
     </div>

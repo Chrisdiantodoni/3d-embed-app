@@ -1,7 +1,9 @@
 // lib/db/projects.ts
 import { db } from "@/src";
 import { assets, projectAssets, projects } from "@/src/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
+import { uploadToCloudinary } from "@/lib/uploadToCloudinary";
+import { auth } from "@clerk/nextjs/server";
 
 export async function getProjectById(id: string) {
   const result = await db
@@ -54,20 +56,54 @@ export type ProjectData = NonNullable<
 >;
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ id: string }> }, // Bungkus dengan Promise
+  { params }: { params: Promise<{ id: string }> },
 ) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { id } = await params;
   const projectId = id;
 
-  console.log("DEBUG: Received Project ID:", projectId);
+  const [project] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(eq(projects.id, projectId));
+
+  if (!project) {
+    return Response.json({ error: "Project not found" }, { status: 404 });
+  }
 
   const body = await req.json();
-  console.log("DEBUG: Body keys:", Object.keys(body));
-  console.log("DEBUG: Camera Settings:", body.cameraSettings);
 
-  const { sceneAssets: clientAssets, lighting, cameraSettings } = body;
+  const { sceneAssets: clientAssets, lighting, cameraSettings, thumbnail, name } = body;
 
   try {
+    // If only renaming, update and return early
+    if (name && typeof name === "string" && !clientAssets) {
+      await db.update(projects).set({ name: name.trim(), updatedAt: new Date() }).where(eq(projects.id, projectId));
+      return Response.json({ success: true });
+    }
+
+    let thumbnailUrl: string | undefined;
+
+    if (thumbnail && typeof thumbnail === "string" && thumbnail.startsWith("data:")) {
+      try {
+        const base64 = thumbnail.split(",")[1];
+        const buffer = Buffer.from(base64, "base64");
+        const result = await uploadToCloudinary(buffer, {
+          folder: "3d-thumbnails",
+          public_id: `project-${projectId}`,
+          format: "webp",
+          overwrite: true,
+        });
+        thumbnailUrl = result.secure_url;
+      } catch (err) {
+        console.error("Thumbnail upload failed:", err);
+      }
+    }
+
     // ── 1. Update project settings ────────────────────────────────────────
 
     await db
@@ -80,6 +116,9 @@ export async function PATCH(
         cameraSettings: JSON.stringify(cameraSettings),
 
         updatedAt: new Date(),
+
+        ...(thumbnailUrl ? { thumbnailUrl } : {}),
+        ...(name && typeof name === "string" ? { name: name.trim() } : {}),
       })
 
       .where(eq(projects.id, projectId));
@@ -91,11 +130,9 @@ export async function PATCH(
         .from(projectAssets)
         .where(eq(projectAssets.projectId, projectId));
 
-      console.log({ existingRows });
-
-      // Key by assetId, not id
+      // Key by assetId → projectAssets PK for lookup
       const existingByAssetId = new Map(
-        existingRows.map((r) => [r.id, r.assetId]),
+        existingRows.map((r) => [r.assetId, r.id]),
       );
       const clientAssetIds = new Set(clientAssets.map((a: any) => a.assetId));
 
@@ -108,8 +145,7 @@ export async function PATCH(
       );
       const toDeleteIds = [...existingByAssetId.entries()]
         .filter(([assetId]) => !clientAssetIds.has(assetId))
-        .map(([, id]) => id); // use the projectAssets PK for delete
-      console.log({ projectId });
+        .map(([, id]) => id);
 
       // ── 4. DELETE ────────────────────────────────────────────────────────────
       if (toDeleteIds.length > 0) {
@@ -120,12 +156,6 @@ export async function PATCH(
 
       // ── 5. INSERT ────────────────────────────────────────────────────────────
       if (toInsert.length > 0) {
-        console.log("--- DEBUG INSERT ---");
-        console.log("Project ID:", projectId);
-        toInsert.forEach((a: any, i: number) => {
-          console.log(`Item ${i} - assetId:`, a.assetId);
-        });
-
         await tx.insert(projectAssets).values(
           toInsert.map((a: any) => ({
             id: crypto.randomUUID(),
@@ -158,6 +188,27 @@ export async function PATCH(
   } catch (err) {
     console.error("[PATCH /api/projects/:id]", err);
 
-    return Response.json({ error: `Failed to save ${err}` }, { status: 500 });
+    return Response.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { userId } = await auth();
+  if (!userId) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+
+  try {
+    await db.run(sql`PRAGMA foreign_keys = ON`);
+    await db.delete(projects).where(eq(projects.id, id));
+    return Response.json({ success: true });
+  } catch (err) {
+    console.error("[DELETE /api/projects/:id]", err);
+    return Response.json({ error: "Failed to delete" }, { status: 500 });
   }
 }
